@@ -58,7 +58,7 @@ if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN не задан. Добавь его в .env (DISCORD_TOKEN=...)")
 
 FEAR_COOKIE = (os.getenv("FEAR_COOKIE") or "").strip()
-STEAM_API_KEY = (os.getenv("STEAM_API_KEY") or "9EA60BC3158081747D77604EB9819F19").strip()
+STEAM_API_KEY = (os.getenv("STEAM_API_KEY") or "").strip()
 ADMINS_CACHE_FILE          = Path(__file__).parent / "admins_cache.json"
 MODERATOR_ONLY_CHANNEL_ID  = _env_int("MODERATOR_ONLY_CHANNEL_ID", 1484290494812000330)
 REPORTS_CHANNEL_ID         = _env_int("REPORTS_CHANNEL_ID", 1501738709744222268)   # reported users
