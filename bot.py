@@ -763,6 +763,13 @@ def _log(msg: str, discord: bool = True):
     ts = _msk_str(datetime.now(timezone.utc), "%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] {msg}")
     
+    # Буферизируем для веб-панели
+    level = "info"
+    if "❌" in msg: level = "error"
+    elif "⚠️" in msg: level = "warn"
+    elif "✅" in msg: level = "info"
+    _log_buffer.append({"timestamp": ts, "level": level, "source": "bot", "message": msg})
+    
     # В Discord отправляем ошибки (❌), предупреждения (⚠️), алерты (🚨), успехи (✅) и логи (📝)
     is_critical = any(p in msg for p in ["❌", "⚠️", "🚨", "✅", "📝"])
     
@@ -791,6 +798,28 @@ async def _log_add_to_queue(formatted: str):
 # ── API helpers ───────────────────────────────────────────────────────────────
 
 _http_warn_last: dict[str, float] = {}
+
+# ── System logs buffer for web panel ──────────────────────────────────────────
+_log_buffer: list[dict] = []
+_LOG_BUFFER_MAX = 500
+
+def _flush_logs_to_db():
+    """Периодически сохраняет буфер логов в kv_store."""
+    global _log_buffer
+    if not _log_buffer:
+        return
+    if not _db.db_is_available():
+        return
+    try:
+        existing = _db.db_load("system_logs.json")
+        if not isinstance(existing, list):
+            existing = []
+        existing.extend(_log_buffer)
+        existing = existing[-_LOG_BUFFER_MAX:]
+        _db.db_save("system_logs.json", existing)
+        _log_buffer.clear()
+    except Exception:
+        pass
 
 def _safe_url(url: str) -> str:
     try:
@@ -10092,6 +10121,8 @@ async def online_record_loop():
                 _log(f"📊 [ONLINE] Записан онлайн: {total}", discord=False)
     except Exception as e:
         _log(f"❌ online_record_loop: {e}")
+    finally:
+        _flush_logs_to_db()
 
 
 @online_record_loop.before_loop
