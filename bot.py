@@ -271,6 +271,10 @@ async def staff_status_refresh_loop():
 
     _log("✅ [STATUS REFRESH] Плановое обновление завершено.")
 
+@staff_status_refresh_loop.before_loop
+async def before_staff_status_refresh():
+    await bot.wait_until_ready()
+
 @tasks.loop(minutes=5)
 async def role_sync_loop():
     """Раз в 5 минут синхронизирует роли всех участников сервера со списком стаффа/админов."""
@@ -1889,6 +1893,10 @@ async def suspicious_monitor_loop():
         _save_suspicious_panel(channel.id, msg.id)
     except Exception as e:
         _log(f"❌ suspicious_monitor_loop error: {e}")
+
+@suspicious_monitor_loop.before_loop
+async def before_suspicious_monitor():
+    await bot.wait_until_ready()
 
 @tree.command(name="suspicious_panel", description="Создать автообновляемую панель подозрительных игроков")
 async def cmd_suspicious_panel(interaction: discord.Interaction):
@@ -3556,6 +3564,10 @@ async def newbies_panel_loop():
     except Exception as e:
         _log(f"❌ newbies_panel_loop error: {e}")
 
+@newbies_panel_loop.before_loop
+async def before_newbies_panel():
+    await bot.wait_until_ready()
+
 @tree.command(name="newbies_panel", description="Создать автообновляемую панель новичков онлайн (≤ 2ч)")
 async def cmd_newbies_panel(interaction: discord.Interaction):
     if not _is_admin(interaction):
@@ -3729,6 +3741,10 @@ async def staffboard_panel_loop():
     except Exception:
         pass
 
+@staffboard_panel_loop.before_loop
+async def before_staffboard_panel():
+    await bot.wait_until_ready()
+
 @tasks.loop(minutes=1)
 async def leaderstaff_panel_loop():
     panel = _load_leaderstaff_panel()
@@ -3764,6 +3780,10 @@ async def leaderstaff_panel_loop():
         _save_leaderstaff_panel(channel.id, msg.id)
     except Exception:
         pass
+
+@leaderstaff_panel_loop.before_loop
+async def before_leaderstaff_panel():
+    await bot.wait_until_ready()
 
 @tasks.loop(hours=1)
 async def punishments_hourly_scan_loop():
@@ -3801,6 +3821,10 @@ async def punishments_hourly_scan_loop():
         changed = True
     if changed:
         _save_punishments_scan_state(state)
+
+@punishments_hourly_scan_loop.before_loop
+async def before_punishments_hourly_scan():
+    await bot.wait_until_ready()
 
 
 MUTE_REPEAT_CHANNEL_ID = 1515095433494663438
@@ -4048,6 +4072,10 @@ async def punishments_daily_refresh_loop():
         _save_all_punishments(data)
     _log(f"✅ Punishments daily refresh: обновлено {updated_count}, удалено мусора {removed_count}", discord=False)
 
+@punishments_daily_refresh_loop.before_loop
+async def before_punishments_daily_refresh():
+    await bot.wait_until_ready()
+
 
 def _short_reason(s: str) -> str:
     s = (s or "—").replace("\n", " ").strip()
@@ -4291,6 +4319,10 @@ async def staff_punish_scan_loop():
             await msg.edit(embed=embed)
         except Exception:
             pass
+
+@staff_punish_scan_loop.before_loop
+async def before_staff_punish_scan():
+    await bot.wait_until_ready()
 
 @tree.command(name="global_history_sync", description="Собрать ВСЮ историю банов/мутов проекта с 01.01.2026")
 async def cmd_global_history_sync(interaction: discord.Interaction):
