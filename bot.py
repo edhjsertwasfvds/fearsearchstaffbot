@@ -81,6 +81,9 @@ REPORTS_ALERT_ROLE_ID  = _env_int("REPORTS_ALERT_ROLE_ID", 1501738368026017912) 
 TOKEN_ALERT_CHANNEL_ID = _env_int("TOKEN_ALERT_CHANNEL_ID", 1501738905597251674)  # канал для уведомления об устаревшем токене
 SUSPICIOUS_CHANNEL_ID  = _env_int("SUSPICIOUS_CHANNEL_ID", 1501738683747926159)   # tracked-admins
 WATCH_CHANNEL_ID       = _env_int("WATCH_CHANNEL_ID", 1506424445852454983)        # 1000top-cheak (мониторинг топа)
+
+SITE_API_URL = (os.getenv("SITE_API_URL") or "").strip()
+SITE_API_SECRET = (os.getenv("SITE_API_SECRET") or "fearstaff-webhook-secret").strip()
 BAN_NOTIFY_CHANNEL_ID  = _env_int("BAN_NOTIFY_CHANNEL_ID", 1503035873816744069)   # уведомления о банах на yooma
 STAFF_PUNISH_LOG_CHANNEL_ID = _env_int("STAFF_PUNISH_LOG_CHANNEL_ID", 1510955528787071077)
 ALERT_ROLE_ID          = _env_int("ALERT_ROLE_ID", 1463269872350920704)
@@ -422,12 +425,13 @@ def _save_json_atomic(path: Path, data: object):
             pass
 
 def _kv_save_panel_data(key: str, data: object):
-    """Сохранить данные панели в kv_store (PostgreSQL) без файла."""
+    """Сохранить данные панели в kv_store (PostgreSQL) и обновить сайт через WS."""
     if _db.db_is_available():
         try:
             _db.db_save(key, data)
         except Exception as e:
             _log(f"⚠️ _kv_save_panel_data({key}) error: {e}")
+    asyncio.create_task(_ws_broadcast("kv_sync", {"key": key}))
 
 def _save_suspicious_panel(channel_id: int, message_id: int):
     _save_json_atomic(SUSPICIOUS_PANEL_FILE, {"channel_id": channel_id, "message_id": message_id})
@@ -818,6 +822,22 @@ def _flush_logs_to_db():
         existing = existing[-_LOG_BUFFER_MAX:]
         _db.db_save("system_logs.json", existing)
         _log_buffer.clear()
+    except Exception:
+        pass
+
+async def _ws_broadcast(event_type: str, data: dict):
+    """Отправляет событие на сайт через WebSocket webhook (fire & forget)."""
+    if not SITE_API_URL:
+        return
+    url = f"{SITE_API_URL.rstrip('/')}/api/bot/webhook/{event_type}"
+    headers = {"Content-Type": "application/json", "X-Bot-Secret": SITE_API_SECRET}
+    try:
+        if _HAS_CURL_CFFI:
+            async with _CurlSession(impersonate="chrome") as s:
+                await s.post(url, json=data, headers=headers, timeout=10)
+        else:
+            async with aiohttp.ClientSession() as s:
+                await s.post(url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10))
     except Exception:
         pass
 
@@ -7260,6 +7280,10 @@ async def _fear_autoban(session: aiohttp.ClientSession, steamid: str, reason: st
     status, body = await _fear_request_raw("POST", url, headers=headers, json_data=payload, timeout=15)
     if status in (200, 201):
         _log(f"✅ [AUTOBAN] Забанен {steamid} на {_format_duration(duration_sec)}. Причина: {reason}")
+        asyncio.create_task(_ws_broadcast("punishment", {
+            "type": "ban", "admin_steamid": "", "player_steamid": steamid,
+            "reason": reason, "duration": str(duration_sec), "status": "active",
+        }))
         return True
     elif status > 0:
         _log(f"⚠️ [AUTOBAN] Ошибка бана {steamid}: HTTP {status} — {body[:300]}")
@@ -7292,6 +7316,10 @@ async def _fear_mute(session: aiohttp.ClientSession, steamid: str, reason: str, 
     if status in (200, 201):
         mute_type = "войс" if punish_type == 1 else "чат"
         _log(f"✅ [MUTE] Замьючен {steamid} ({mute_type}) на {_format_duration(duration_sec)}. Причина: {reason}")
+        asyncio.create_task(_ws_broadcast("punishment", {
+            "type": "mute", "admin_steamid": "", "player_steamid": steamid,
+            "reason": reason, "duration": str(duration_sec), "status": "active",
+        }))
         return True
     elif status > 0:
         _log(f"⚠️ [MUTE] Ошибка мута {steamid}: HTTP {status} — {body[:300]}")
@@ -10065,34 +10093,35 @@ async def drops_loop():
                 if not isinstance(data, list):
                     return
 
-        new_count = 0
+        new_drops = []
         for drop in data:
             did = str(drop.get("id", ""))
             if not did or did in _drops_known_ids:
                 continue
 
-            steamid = str(drop.get("steamid", ""))
-            name = drop.get("name", "—")
-            price = drop.get("price", 0)
-            created = drop.get("created_at", "")
-            image = drop.get("image", "")
-            rarity = drop.get("rarity_color", "")
-
             _drops_log[did] = {
                 "id": did,
-                "name": name,
-                "price": price,
-                "steamid": steamid,
-                "created_at": created,
-                "image": image,
-                "rarity_color": rarity,
+                "name": drop.get("name", "—"),
+                "price": drop.get("price", 0),
+                "steamid": str(drop.get("steamid", "")),
+                "created_at": drop.get("created_at", ""),
+                "image": drop.get("image", ""),
+                "rarity_color": drop.get("rarity_color", ""),
             }
             _drops_known_ids.add(did)
-            new_count += 1
+            new_drops.append(drop)
 
-        if new_count:
+        if new_drops:
             _save_drops()
-            _log(f"🎮 [DROPS] Новых дропов: {new_count}", discord=False)
+            _log(f"🎮 [DROPS] Новых дропов: {len(new_drops)}", discord=False)
+            for drop in new_drops:
+                asyncio.create_task(_ws_broadcast("drop", {
+                    "steamid": str(drop.get("steamid", "")),
+                    "name": drop.get("name", ""),
+                    "price": drop.get("price", 0),
+                    "image": drop.get("image", ""),
+                    "created_at": drop.get("created_at", ""),
+                }))
 
     except Exception as e:
         _log(f"❌ drops_loop: {e}")
