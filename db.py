@@ -5,6 +5,8 @@ Falls back gracefully if DATABASE_URL is not set.
 """
 import os
 import json
+import time
+import datetime
 import logging
 import psycopg2
 import psycopg2.extras
@@ -91,6 +93,89 @@ def _init_table():
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_vdf_history_check_id ON vdf_history(check_id)
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS admins (
+                    admin_id BIGINT PRIMARY KEY,
+                    steamid TEXT NOT NULL UNIQUE,
+                    group_id INTEGER,
+                    group_display_name TEXT,
+                    group_name TEXT,
+                    immunity INTEGER,
+                    is_frozen BOOLEAN DEFAULT FALSE,
+                    avatar_full TEXT,
+                    raw_json JSONB,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS profiles (
+                    steamid TEXT PRIMARY KEY,
+                    name TEXT,
+                    last_activity TIMESTAMPTZ,
+                    avatar_full TEXT,
+                    discord_nickname TEXT,
+                    discord_id TEXT,
+                    rank INTEGER,
+                    kills INTEGER,
+                    deaths INTEGER,
+                    playtime INTEGER,
+                    ban_is_banned BOOLEAN,
+                    vip_is_vip BOOLEAN,
+                    raw_json JSONB,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS punishments (
+                    id BIGINT PRIMARY KEY,
+                    type SMALLINT NOT NULL CHECK (type IN (1, 2)),
+                    steamid TEXT NOT NULL,
+                    name TEXT,
+                    admin TEXT,
+                    admin_steamid TEXT,
+                    admin_avatar TEXT,
+                    avatar TEXT,
+                    reason TEXT,
+                    status INTEGER,
+                    duration INTEGER,
+                    created BIGINT,
+                    expires BIGINT,
+                    unban_price INTEGER,
+                    raw_json JSONB,
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_punishments_type_created ON punishments(type, created DESC)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_punishments_steamid ON punishments(steamid)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_punishments_admin_steamid ON punishments(admin_steamid)")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS panel_server_activity (
+                    id SERIAL PRIMARY KEY,
+                    timestamp BIGINT NOT NULL,
+                    hour INTEGER NOT NULL,
+                    total_players INTEGER NOT NULL,
+                    total_admins INTEGER NOT NULL,
+                    server_data TEXT NOT NULL
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_panel_server_activity_ts ON panel_server_activity(timestamp)")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS vdf_rechecks (
+                    id SERIAL PRIMARY KEY,
+                    check_id INTEGER NOT NULL,
+                    steamids TEXT[] NOT NULL,
+                    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                    results JSONB,
+                    requested_by VARCHAR(128) DEFAULT 'site',
+                    requested_at TIMESTAMPTZ DEFAULT NOW(),
+                    started_at TIMESTAMPTZ,
+                    completed_at TIMESTAMPTZ,
+                    error TEXT
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vdf_rechecks_status ON vdf_rechecks(status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_vdf_rechecks_check_id ON vdf_rechecks(check_id)")
+            logger.info("[DB] Таблицы инициализированы")
     except Exception as e:
         logger.error(f"[DB] Ошибка создания таблиц: {e}")
 
@@ -350,3 +435,467 @@ def _extract_yooma_reason(yooma_data: dict) -> str:
         if p.get("status") == "active":
             return p.get("reason", "") or p.get("type_name", "")
     return ""
+
+
+# ── Punishments ──────────────────────────────────────────────────────────────
+
+def db_upsert_punishment(row: dict, ptype: int) -> bool:
+    """UPSERT одного наказания. ptype: 1=бан, 2=мут."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        pid = int(row.get("id") or 0)
+        if not pid:
+            return False
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO punishments (
+                    id, type, steamid, name, admin, admin_steamid, admin_avatar, avatar,
+                    reason, status, duration, created, expires, unban_price, raw_json, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (id) DO UPDATE SET
+                    type = EXCLUDED.type, steamid = EXCLUDED.steamid, name = EXCLUDED.name,
+                    admin = EXCLUDED.admin, admin_steamid = EXCLUDED.admin_steamid,
+                    admin_avatar = EXCLUDED.admin_avatar, avatar = EXCLUDED.avatar,
+                    reason = EXCLUDED.reason, status = EXCLUDED.status, duration = EXCLUDED.duration,
+                    created = EXCLUDED.created, expires = EXCLUDED.expires,
+                    unban_price = EXCLUDED.unban_price, raw_json = EXCLUDED.raw_json, updated_at = NOW()
+            """, (
+                pid, ptype,
+                str(row.get("steamid") or row.get("steam_id") or ""),
+                row.get("name", ""),
+                row.get("admin") or row.get("admin_name") or "",
+                str(row.get("admin_steamid") or ""),
+                row.get("admin_avatar") or row.get("admin_steam_avatar") or None,
+                row.get("avatar") or row.get("player_avatar") or None,
+                row.get("reason", ""),
+                int(row.get("status") or 0),
+                int(row.get("duration") or 0),
+                int(row.get("created") or 0),
+                int(row.get("expires") or 0),
+                row.get("unbanPrice") or row.get("unban_price") or None,
+                json.dumps(row, ensure_ascii=False, default=str),
+            ))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка upsert_punishment id={row.get('id')}: {e}")
+        return False
+
+
+def db_upsert_punishments_batch(rows: list, ptype: int) -> int:
+    """Batch UPSERT наказаний. Возвращает количество записанных."""
+    conn = _get_conn()
+    if not conn or not rows:
+        return 0
+    written = 0
+    try:
+        with conn.cursor() as cur:
+            for row in rows:
+                pid = int(row.get("id") or 0)
+                if not pid:
+                    continue
+                cur.execute("""
+                    INSERT INTO punishments (
+                        id, type, steamid, name, admin, admin_steamid, admin_avatar, avatar,
+                        reason, status, duration, created, expires, unban_price, raw_json, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        type = EXCLUDED.type, steamid = EXCLUDED.steamid, name = EXCLUDED.name,
+                        admin = EXCLUDED.admin, admin_steamid = EXCLUDED.admin_steamid,
+                        admin_avatar = EXCLUDED.admin_avatar, avatar = EXCLUDED.avatar,
+                        reason = EXCLUDED.reason, status = EXCLUDED.status, duration = EXCLUDED.duration,
+                        created = EXCLUDED.created, expires = EXCLUDED.expires,
+                        unban_price = EXCLUDED.unban_price, raw_json = EXCLUDED.raw_json, updated_at = NOW()
+                """, (
+                    pid, ptype,
+                    str(row.get("steamid") or row.get("steam_id") or ""),
+                    row.get("name", ""),
+                    row.get("admin") or row.get("admin_name") or "",
+                    str(row.get("admin_steamid") or ""),
+                    row.get("admin_avatar") or row.get("admin_steam_avatar") or None,
+                    row.get("avatar") or row.get("player_avatar") or None,
+                    row.get("reason", ""),
+                    int(row.get("status") or 0),
+                    int(row.get("duration") or 0),
+                    int(row.get("created") or 0),
+                    int(row.get("expires") or 0),
+                    row.get("unbanPrice") or row.get("unban_price") or None,
+                    json.dumps(row, ensure_ascii=False, default=str),
+                ))
+                written += 1
+    except Exception as e:
+        logger.error(f"[DB] Ошибка batch upsert punishments: {e}")
+    return written
+
+
+def db_get_punishments_by_admin(admin_steamid: str, ptype: int = 0, limit: int = 100, offset: int = 0) -> list[dict]:
+    """Получить наказания конкретного админа."""
+    conn = _get_conn()
+    if not conn:
+        return []
+    try:
+        with conn.cursor() as cur:
+            if ptype:
+                cur.execute("""
+                    SELECT id, type, steamid, name, admin, admin_steamid, reason, status,
+                           duration, created, expires, unban_price, updated_at
+                    FROM punishments WHERE admin_steamid = %s AND type = %s
+                    ORDER BY created DESC LIMIT %s OFFSET %s
+                """, (admin_steamid, ptype, limit, offset))
+            else:
+                cur.execute("""
+                    SELECT id, type, steamid, name, admin, admin_steamid, reason, status,
+                           duration, created, expires, unban_price, updated_at
+                    FROM punishments WHERE admin_steamid = %s
+                    ORDER BY created DESC LIMIT %s OFFSET %s
+                """, (admin_steamid, limit, offset))
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"[DB] Ошибка get_punishments_by_admin: {e}")
+        return []
+
+
+def db_get_staff_punishment_stats(since: int = 0) -> dict:
+    """Агрегация наказаний по стаффу: {steamid: {bans: N, mutes: N}}."""
+    conn = _get_conn()
+    if not conn:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT admin_steamid, type, COUNT(*)::int as count
+                FROM punishments WHERE created >= %s AND admin_steamid != ''
+                GROUP BY admin_steamid, type
+            """, (since,))
+            stats = {}
+            for r in cur.fetchall():
+                sid = r["admin_steamid"]
+                if sid not in stats:
+                    stats[sid] = {"bans": 0, "mutes": 0}
+                if r["type"] == 1:
+                    stats[sid]["bans"] = r["count"]
+                elif r["type"] == 2:
+                    stats[sid]["mutes"] = r["count"]
+            return stats
+    except Exception as e:
+        logger.error(f"[DB] Ошибка get_staff_punishment_stats: {e}")
+        return {}
+
+
+def db_get_punishments_trend(days: int = 30) -> list[dict]:
+    """Тренд наказаний по дням."""
+    conn = _get_conn()
+    if not conn:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    to_timestamp(created)::date as day,
+                    COUNT(*) FILTER (WHERE type = 1) as bans,
+                    COUNT(*) FILTER (WHERE type = 2) as mutes,
+                    COUNT(*) as total
+                FROM punishments
+                WHERE created >= EXTRACT(EPOCH FROM NOW() - INTERVAL '%s days')
+                GROUP BY day ORDER BY day ASC
+            """, (days,))
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"[DB] Ошибка get_punishments_trend: {e}")
+        return []
+
+
+def db_get_punishments_month_compare() -> dict:
+    """Сравнение наказаний текущего и прошлого месяца."""
+    conn = _get_conn()
+    if not conn:
+        return {"current": {"bans": 0, "mutes": 0, "total": 0}, "previous": {"bans": 0, "mutes": 0, "total": 0}}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE type = 1) as bans,
+                    COUNT(*) FILTER (WHERE type = 2) as mutes,
+                    COUNT(*) as total
+                FROM punishments
+                WHERE to_char(to_timestamp(created), 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')
+            """)
+            curr = dict(cur.fetchone() or {"bans": 0, "mutes": 0, "total": 0})
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE type = 1) as bans,
+                    COUNT(*) FILTER (WHERE type = 2) as mutes,
+                    COUNT(*) as total
+                FROM punishments
+                WHERE to_char(to_timestamp(created), 'YYYY-MM') = to_char(NOW() - INTERVAL '1 month', 'YYYY-MM')
+            """)
+            prev = dict(cur.fetchone() or {"bans": 0, "mutes": 0, "total": 0})
+            return {"current": curr, "previous": prev}
+    except Exception as e:
+        logger.error(f"[DB] Ошибка get_punishments_month_compare: {e}")
+        return {"current": {"bans": 0, "mutes": 0, "total": 0}, "previous": {"bans": 0, "mutes": 0, "total": 0}}
+
+
+def db_get_punishments_list(ptype: int = 0, limit: int = 50, offset: int = 0) -> list[dict]:
+    """Получить список последних наказаний."""
+    conn = _get_conn()
+    if not conn:
+        return []
+    try:
+        with conn.cursor() as cur:
+            if ptype:
+                cur.execute("""
+                    SELECT id, type, steamid, name, admin, admin_steamid, reason, status,
+                           duration, created, expires, updated_at
+                    FROM punishments WHERE type = %s
+                    ORDER BY created DESC LIMIT %s OFFSET %s
+                """, (ptype, limit, offset))
+            else:
+                cur.execute("""
+                    SELECT id, type, steamid, name, admin, admin_steamid, reason, status,
+                           duration, created, expires, updated_at
+                    FROM punishments
+                    ORDER BY created DESC LIMIT %s OFFSET %s
+                """, (limit, offset))
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"[DB] Ошибка get_punishments_list: {e}")
+        return []
+
+
+# ── Admins & Profiles ────────────────────────────────────────────────────────
+
+def db_upsert_admin(admin: dict) -> bool:
+    """UPSERT админа из Fear API /admins/."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        admin_id = int(admin.get("admin_id") or admin.get("id") or 0)
+        steamid = str(admin.get("steamid") or "").strip()
+        if not admin_id or not steamid:
+            return False
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO admins (
+                    admin_id, steamid, group_id, group_display_name, group_name,
+                    immunity, is_frozen, avatar_full, raw_json, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (admin_id) DO UPDATE SET
+                    steamid = EXCLUDED.steamid, group_id = EXCLUDED.group_id,
+                    group_display_name = EXCLUDED.group_display_name,
+                    group_name = EXCLUDED.group_name, immunity = EXCLUDED.immunity,
+                    is_frozen = EXCLUDED.is_frozen, avatar_full = EXCLUDED.avatar_full,
+                    raw_json = EXCLUDED.raw_json, updated_at = NOW()
+            """, (
+                admin_id, steamid,
+                admin.get("group_id"),
+                admin.get("group_display_name") or "",
+                admin.get("group_name") or "",
+                admin.get("immunity") or 0,
+                bool(admin.get("is_frozen", False)),
+                admin.get("avatar_full") or "",
+                json.dumps(admin, ensure_ascii=False, default=str),
+            ))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка upsert_admin {steamid}: {e}")
+        return False
+
+
+def db_upsert_profile(profile: dict) -> bool:
+    """UPSERT профиля из Fear API /profile/{steamid}."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        steamid = str(profile.get("steamid") or "").strip()
+        if not steamid:
+            return False
+        stats = profile.get("stats") or {}
+        ban_info = profile.get("banInfo") or {}
+        vip_info = profile.get("vipInfo") or {}
+        discord = profile.get("discord") or {}
+        discord_nickname = (
+            profile.get("discordNickname")
+            or profile.get("discord_nickname")
+            or discord.get("nickname")
+            or discord.get("name")
+        )
+        discord_id = (
+            profile.get("providerUserId")
+            or profile.get("provider_user_id")
+            or profile.get("discordId")
+            or profile.get("discord_id")
+            or discord.get("id")
+            or discord.get("userId")
+        )
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO profiles (
+                    steamid, name, last_activity, avatar_full, discord_nickname, discord_id,
+                    rank, kills, deaths, playtime, ban_is_banned, vip_is_vip, raw_json, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (steamid) DO UPDATE SET
+                    name = EXCLUDED.name, last_activity = EXCLUDED.last_activity,
+                    avatar_full = EXCLUDED.avatar_full, discord_nickname = EXCLUDED.discord_nickname,
+                    discord_id = EXCLUDED.discord_id, rank = EXCLUDED.rank,
+                    kills = EXCLUDED.kills, deaths = EXCLUDED.deaths, playtime = EXCLUDED.playtime,
+                    ban_is_banned = EXCLUDED.ban_is_banned, vip_is_vip = EXCLUDED.vip_is_vip,
+                    raw_json = EXCLUDED.raw_json, updated_at = NOW()
+            """, (
+                steamid,
+                profile.get("name") or "",
+                profile.get("last_activity") or None,
+                profile.get("avatar_full") or profile.get("avatar") or "",
+                discord_nickname,
+                discord_id,
+                stats.get("rank"),
+                stats.get("kills"),
+                stats.get("deaths"),
+                stats.get("playtime"),
+                bool(ban_info.get("isBanned", False)),
+                bool(vip_info.get("isVip", False)),
+                json.dumps(profile, ensure_ascii=False, default=str),
+            ))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка upsert_profile {steamid}: {e}")
+        return False
+
+
+def db_list_admins_with_profiles() -> list[dict]:
+    """Получить список админов с профилями."""
+    conn = _get_conn()
+    if not conn:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT a.admin_id, a.steamid, a.group_display_name, a.group_name,
+                       a.immunity, a.is_frozen, a.avatar_full,
+                       COALESCE(p.name, a.raw_json->>'name') AS name,
+                       COALESCE(p.avatar_full, a.avatar_full) AS avatar,
+                       p.rank, p.kills, p.deaths, p.playtime,
+                       p.discord_nickname, p.discord_id,
+                       p.ban_is_banned, p.vip_is_vip,
+                       GREATEST(a.updated_at, COALESCE(p.updated_at, a.updated_at)) AS updated_at
+                FROM admins a LEFT JOIN profiles p ON p.steamid = a.steamid
+                ORDER BY a.admin_id DESC
+            """)
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"[DB] Ошибка list_admins_with_profiles: {e}")
+        return []
+
+
+# ── Server Activity ──────────────────────────────────────────────────────────
+
+def db_save_server_activity(total_players: int, total_admins: int, server_data: list) -> bool:
+    """Сохранить снапшот активности серверов."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        now = int(time.time())
+        hour = datetime.datetime.now().hour
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO panel_server_activity (timestamp, hour, total_players, total_admins, server_data)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (now, hour, total_players, total_admins, json.dumps(server_data, ensure_ascii=False, default=str)))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка save_server_activity: {e}")
+        return False
+
+
+# ── VDF Rechecks ─────────────────────────────────────────────────────────────
+
+def db_create_recheck(check_id: int, steamids: list[str]) -> int:
+    """Создать запрос на перепроверку. Возвращает recheck_id."""
+    conn = _get_conn()
+    if not conn:
+        return 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO vdf_rechecks (check_id, steamids, status)
+                VALUES (%s, %s, 'pending') RETURNING id
+            """, (check_id, steamids))
+            row = cur.fetchone()
+            return row["id"] if row else 0
+    except Exception as e:
+        logger.error(f"[DB] Ошибка create_recheck: {e}")
+        return 0
+
+
+def db_get_pending_rechecks() -> list[dict]:
+    """Получить ожидающие перепроверки."""
+    conn = _get_conn()
+    if not conn:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, check_id, steamids, status, requested_at
+                FROM vdf_rechecks WHERE status = 'pending'
+                ORDER BY requested_at ASC LIMIT 10
+            """)
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"[DB] Ошибка get_pending_rechecks: {e}")
+        return []
+
+
+def db_update_recheck(recheck_id: int, status: str, results=None, error: str = None) -> bool:
+    """Обновить статус перепроверки."""
+    conn = _get_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE vdf_rechecks
+                SET status = %s,
+                    results = %s,
+                    error = %s,
+                    started_at = CASE WHEN %s = 'processing' THEN NOW() ELSE started_at END,
+                    completed_at = CASE WHEN %s IN ('done', 'error') THEN NOW() ELSE completed_at END
+                WHERE id = %s
+            """, (
+                status,
+                json.dumps(results, ensure_ascii=False, default=str) if results else None,
+                error, status, status, recheck_id,
+            ))
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Ошибка update_recheck: {e}")
+        return False
+
+
+def db_get_recheck_result(recheck_id: int) -> dict:
+    """Получить результат перепроверки."""
+    conn = _get_conn()
+    if not conn:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, check_id, steamids, status, results, error,
+                       requested_at, started_at, completed_at
+                FROM vdf_rechecks WHERE id = %s
+            """, (recheck_id,))
+            row = cur.fetchone()
+            if not row:
+                return {}
+            r = dict(row)
+            for key in ("requested_at", "started_at", "completed_at"):
+                if r.get(key) and hasattr(r[key], "isoformat"):
+                    r[key] = r[key].isoformat()
+            return r
+    except Exception as e:
+        logger.error(f"[DB] Ошибка get_recheck_result: {e}")
+        return {}

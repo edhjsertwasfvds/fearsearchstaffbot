@@ -55,6 +55,8 @@ if not TOKEN:
 
 FEAR_COOKIE = (os.getenv("FEAR_COOKIE") or "").strip()
 STEAM_API_KEY = (os.getenv("STEAM_API_KEY") or "9EA60BC3158081747D77604EB9819F19").strip()
+SITE_API_URL = (os.getenv("SITE_API_URL") or "").strip()
+SITE_API_SECRET = (os.getenv("SITE_API_SECRET") or "default_secret").strip()
 ADMINS_CACHE_FILE          = Path(__file__).parent / "admins_cache.json"
 MODERATOR_ONLY_CHANNEL_ID  = _env_int("MODERATOR_ONLY_CHANNEL_ID", 1484290494812000330)
 REPORTS_CHANNEL_ID         = _env_int("REPORTS_CHANNEL_ID", 1501738709744222268)   # reported users
@@ -135,12 +137,7 @@ _last_online_record_ts: float = 0
 PUNISHMENTS_SCAN_STATE_FILE = Path(__file__).parent / "punishments_scan_state.json"
 
 def _load_all_punishments() -> dict:
-    if ALL_PUNISHMENTS_FILE.exists():
-        try:
-            return json.loads(ALL_PUNISHMENTS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {"bans": {}, "mutes": {}}
+    return _load_json_with_fallback(ALL_PUNISHMENTS_FILE, {"bans": {}, "mutes": {}})
 
 def _save_all_punishments(data: dict):
     _save_json_atomic(ALL_PUNISHMENTS_FILE, data)
@@ -173,6 +170,7 @@ def _log_punishments_batch(items_with_type: list[tuple[dict, int]]):
         data = _load_all_punishments()
         changed = False
         
+        pg_batch = []
         for item, ptype in items_with_type:
             created_ts = int(item.get("created") or 0)
             if created_ts < START_TS:
@@ -189,9 +187,25 @@ def _log_punishments_batch(items_with_type: list[tuple[dict, int]]):
             if existing != item:
                 data[key][pid] = item
                 changed = True
+            
+            pg_batch.append((item, ptype))
         
         if changed:
             _save_all_punishments(data)
+
+        if pg_batch:
+            try:
+                bans = [item for item, pt in pg_batch if pt == 1]
+                mutes = [item for item, pt in pg_batch if pt == 2]
+                written = 0
+                if bans:
+                    written += _db.db_upsert_punishments_batch(bans, 1)
+                if mutes:
+                    written += _db.db_upsert_punishments_batch(mutes, 2)
+                if written:
+                    _log(f"📝 [PG] Batch upsert: {written} punishments", discord=False)
+            except Exception as e:
+                _log(f"⚠️ [PG] Ошибка batch upsert punishments: {e}", discord=False)
     except Exception as e:
         _log(f"⚠️ Ошибка глобального логирования наказаний (batch): {e}")
 
@@ -363,6 +377,23 @@ def _save_json_atomic(path: Path, data: object):
             _db.db_save(path.name, data)
         except Exception:
             pass
+
+def _load_json_with_fallback(path: Path, default=None):
+    """Загружает JSON из файла с fallback на PostgreSQL kv_store."""
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    # Fallback: читаем из PostgreSQL
+    if _db.db_is_available():
+        try:
+            data = _db.db_load(path.name)
+            if data is not None:
+                return data
+        except Exception:
+            pass
+    return default
 
 def _save_suspicious_panel(channel_id: int, message_id: int):
     _save_json_atomic(SUSPICIOUS_PANEL_FILE, {"channel_id": channel_id, "message_id": message_id})
@@ -554,11 +585,7 @@ def _save_tracked():
 
 def _load_marks():
     global _marks
-    if MARKS_FILE.exists():
-        try:
-            _marks = json.loads(MARKS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            _marks = {}
+    _marks = _load_json_with_fallback(MARKS_FILE, {})
 
 def _save_marks():
     _save_json_atomic(MARKS_FILE, _marks)
@@ -698,6 +725,18 @@ def _log(msg: str, discord: bool = True):
     ts = _msk_str(datetime.now(timezone.utc), "%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] {msg}")
     
+    # Пишем в PostgreSQL (errors + warnings + important events)
+    if any(p in msg for p in ["❌", "⚠️", "🚨"]):
+        try:
+            _db.LogService("bot", "error" if "❌" in msg else "warning", msg[:2000])
+        except Exception:
+            pass
+    elif any(p in msg for p in ["✅", "📝"]):
+        try:
+            _db.LogService("bot", "info", msg[:2000])
+        except Exception:
+            pass
+
     # В Discord отправляем ошибки (❌), предупреждения (⚠️), алерты (🚨), успехи (✅) и логи (📝)
     is_critical = any(p in msg for p in ["❌", "⚠️", "🚨", "✅", "📝"])
     
@@ -2849,12 +2888,7 @@ def _calc_avg_online(date_str: str = None) -> dict:
 def _load_staff_db() -> dict[str, dict]:
     """{ steamid: { "name": str, "discord_id": str|None, "discord_name": str|None, 
                    "role": str, "group_name": str, "updated_at": str } }"""
-    if STAFF_DB_FILE.exists():
-        try:
-            return json.loads(STAFF_DB_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {}
+    return _load_json_with_fallback(STAFF_DB_FILE, {})
 
 def _save_staff_db(data: dict):
     _save_json_atomic(STAFF_DB_FILE, data)
@@ -7687,7 +7721,37 @@ async def monitor_loop():
                     tracked_entries.append({"player": player, "server": srv, "is_top1000": is_top1000})
         
         _cached_online_players = new_online
+
+        # Сохраняем снапшот активности в PostgreSQL
+        try:
+            total_admins = sum(1 for sid, info in new_online.items()
+                               if sid in {str(a.get("steamid") or "").strip() for a in _load_admins_cache()})
+            _db.db_save_server_activity(len(new_online), total_admins, servers)
+        except Exception as e:
+            _log(f"⚠️ [MONITOR] Ошибка save_server_activity: {e}", discord=False)
+
         _log(f"👮 [MONITOR] Отслеживаемых: {len(tracked_entries)} | Всего онлайн: {len(new_online)}", discord=False)
+
+        # ── POST snapshot в сайт (WebSocket real-time) ──
+        if SITE_API_URL and new_online:
+            try:
+                import urllib.request
+                snapshot = {
+                    "secret": SITE_API_SECRET,
+                    "players": new_online,
+                    "total": len(new_online),
+                    "servers": servers,
+                    "timestamp": int(time.time()),
+                }
+                req = urllib.request.Request(
+                    f"{SITE_API_URL}/api/bot/snapshot",
+                    data=json.dumps(snapshot).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                urllib.request.urlopen(req, timeout=5)
+            except Exception as e:
+                _log(f"⚠️ [MONITOR] Snapshot POST error: {e}", discord=False)
 
         # ── Мгновенная проверка банов для новых игроков ──
         new_sids = set(new_online.keys()) - set(_ban_last_check_ts.keys())
@@ -7917,6 +7981,20 @@ async def _update_cache_for_staff(session: aiohttp.ClientSession, entry: dict) -
             }
             path = CACHE_DIR / f"fearsearch_bans_{sid}.json"
             _save_json_atomic(path, cache)
+
+        # 3. Сохраняем профиль в PostgreSQL
+        try:
+            pg_headers = {
+                "Cookie": FEAR_COOKIE,
+                "Referer": "https://fearproject.ru/",
+                "Accept": "application/json"
+            }
+            profile = await _fetch_json(session, f"{API_BASE}/profile/{sid}", headers=pg_headers)
+            if profile:
+                _db.db_upsert_profile(profile)
+        except Exception as e:
+            _log(f"⚠️ [PG] Ошибка upsert profile {sid}: {e}", discord=False)
+
         return True
     except Exception as e:
         _log(f"  ❌ Ошибка загрузки для {name} ({sid}): {e}")
@@ -7951,6 +8029,17 @@ async def _sync_staff_list() -> dict:
                 admin["discord_nickname"] = old["discord_nickname"]
 
     _save_admins_cache(admins)
+
+    # === 1.1. Синхронизация админов в PostgreSQL ===
+    try:
+        pg_written = 0
+        for admin in admins:
+            if _db.db_upsert_admin(admin):
+                pg_written += 1
+        if pg_written:
+            _log(f"📝 [PG] Upserted {pg_written} admins to PostgreSQL", discord=False)
+    except Exception as e:
+        _log(f"⚠️ [PG] Ошибка синхронизации админов в PostgreSQL: {e}", discord=False)
 
     # === 2. Обновляем staff_db.json — только стафф (MODER+) ===
     updated = 0
@@ -8822,6 +8911,11 @@ async def _refresh_admins_and_notify():
             for admin, profile in zip(batch, profiles):
                 if not profile:
                     continue
+                # Сохраняем профиль в PostgreSQL
+                try:
+                    _db.db_upsert_profile(profile)
+                except Exception as e:
+                    _log(f"⚠️ [PG] Ошибка upsert profile {admin.get('steamid')}: {e}", discord=False)
                 has_discord = bool(profile.get("discordNickname") or profile.get("providerUserId"))
                 if not has_discord:
                     no_discord.append(admin)
