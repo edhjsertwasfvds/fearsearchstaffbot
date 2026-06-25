@@ -843,12 +843,12 @@ async def _fetch_json(session: aiohttp.ClientSession, url: str, params: dict = N
                 # 404 обычно означает отсутствие данных, пишем только в консоль
                 _log(f"ℹ️ HTTP 404: {url}", discord=False)
             elif last_status == 403:
-                # 403 часто бывает из-за защиты сайта, пишем один раз
-                _log(f"❌ HTTP 403 Forbidden: {safe} (Проверь доступ к сайту)")
+                # 403 часто бывает из-за защиты сайта, пишем только в консоль чтобы не спамить Discord
+                _log(f"ℹ️ HTTP 403 Forbidden: {safe} (Проверь доступ к сайту)", discord=False)
             else:
-                _log(f"❌ HTTP Error {last_status}: {safe}")
+                _log(f"ℹ️ HTTP Error {last_status}: {safe}", discord=False)
         elif last_err is not None:
-            _log(f"❌ Network Error {type(last_err).__name__}: {safe}")
+            _log(f"ℹ️ Network Error {type(last_err).__name__}: {safe}", discord=False)
 
     return None
 
@@ -7475,12 +7475,14 @@ async def _check_cs2red_ban(session: aiohttp.ClientSession, steamid: str) -> dic
 
         return {"found": bool(processed), "bans": processed}
     except Exception as e:
-        _log(f"⚠️ cs2red check {steamid}: {e}")
+        _log(f"ℹ️ cs2red check {steamid}: {e}", discord=False)
         return {"found": False, "bans": []}
 
 
 async def _notify_bans_for_player(steamid: str, nickname: str, channel, session: aiohttp.ClientSession = None):
     """Проверяет игрока на yooma+cs2red и отправляет уведомление если есть новые баны."""
+    if not channel:
+        return False
     if steamid not in _ban_notify_cache:
         _ban_notify_cache[steamid] = {"yooma": set(), "cs2red": set()}
 
@@ -7528,7 +7530,7 @@ async def _notify_bans_for_player(steamid: str, nickname: str, channel, session:
             try:
                 await asyncio.wait_for(channel.send(embed=embed), timeout=5.0)
             except Exception as e:
-                _log(f"⚠️ Не удалось отправить бан-уведомление (yooma): {e}")
+                _log(f"ℹ️ Не удалось отправить бан-уведомление (yooma) в канал {getattr(channel, 'id', '?')}: {type(e).__name__}: {e}", discord=False)
 
             if not _autoban_settings.get("yooma_cheat_autoban_enabled", True):
                 continue
@@ -7606,7 +7608,7 @@ async def _notify_bans_for_player(steamid: str, nickname: str, channel, session:
             try:
                 await asyncio.wait_for(channel.send(embed=embed), timeout=5.0)
             except Exception as e:
-                _log(f"⚠️ Не удалось отправить бан-уведомление (cs2red): {e}")
+                _log(f"ℹ️ Не удалось отправить бан-уведомление (cs2red) в канал {getattr(channel, 'id', '?')}: {type(e).__name__}: {e}", discord=False)
 
     return new_found
 
@@ -9223,7 +9225,7 @@ async def _check_yooma_ban(session: aiohttp.ClientSession, steamid: str, nicknam
 
         return {"found": len(processed) > 0, "punishments": processed}
     except Exception as e:
-        _log(f"⚠️ yooma check {steamid}: {e}")
+        _log(f"ℹ️ yooma check {steamid}: {e}", discord=False)
         return {"found": False, "punishments": []}
 
 def _build_yooma_embed(steamid: str, yooma_data: dict, nickname: str = "") -> discord.Embed:
@@ -10355,7 +10357,8 @@ async def drops_loop():
             }
             _drops_log[did] = entry
             _drops_known_ids.add(did)
-            db.db_save_drop(entry)
+            if _db.db_is_available():
+                _db.db_save_drop(entry)
             new_count += 1
 
         if new_count:
