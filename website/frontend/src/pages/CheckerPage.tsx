@@ -148,8 +148,8 @@ export default function CheckerPage() {
         </div>
 
         {mode === 'vdf' ? (
-          <div className="flex gap-3 items-center">
-            <label className="flex-1 flex items-center gap-3 px-4 py-3 bg-[#0c0e14] border border-dashed border-white/10 rounded-xl text-sm text-gray-400 hover:border-amber-500/30 hover:text-gray-300 cursor-pointer transition-all">
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-3 px-4 py-3 bg-[#0c0e14] border border-dashed border-white/10 rounded-xl text-sm text-gray-400 hover:border-amber-500/30 hover:text-gray-300 cursor-pointer transition-all">
               <Upload className="w-5 h-5" />
               {vdfFile ? vdfFile.name : 'Выберите config.vdf файл'}
               <input type="file" accept=".vdf" className="hidden" onChange={e => {
@@ -160,11 +160,12 @@ export default function CheckerPage() {
                 }
               }} />
             </label>
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              onClick={() => handleVDFUpload()} disabled={loading || !vdfFile}
-              className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-xl transition-all disabled:opacity-50">
-              {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Проверить'}
-            </motion.button>
+            {loading && (
+              <div className="flex items-center gap-2 text-xs text-amber-400">
+                <div className="w-4 h-4 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+                Проверяю {vdfFile?.name}...
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -225,15 +226,15 @@ export default function CheckerPage() {
                       {r.yooma_banned && <span className="px-3 py-1 bg-purple-500/10 border border-purple-500/20 rounded text-xs text-purple-400 font-bold">Yooma: {r.yooma_reason || 'Обход'}</span>}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <a href={r.fear_url || `https://fearproject.ru/profile/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
+                      <a href={r.fear_url || `https://fearproject.ru/profile/${r.steam_id}`} target="_blank" rel="noopener noreferrer" title="Открыть профиль на FearProject"
                         className="flex items-center gap-1 px-3 py-2 bg-[#4f7cff] hover:bg-[#3d6aff] text-white rounded-lg text-sm font-medium transition-all">
-                        <ExternalLink className="w-3.5 h-3.5" />Fear
+                        <ExternalLink className="w-3.5 h-3.5" />FearProject
                       </a>
-                      <a href={r.steam_url || `https://steamcommunity.com/profiles/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
+                      <a href={r.steam_url || `https://steamcommunity.com/profiles/${r.steam_id}`} target="_blank" rel="noopener noreferrer" title="Открыть профиль в Steam"
                         className="flex items-center gap-1 px-3 py-2 bg-[#1b2838] hover:bg-[#1e2f42] border border-[#2a475e]/50 text-[#66c0f4] rounded-lg text-sm font-medium transition-all">
                         <ExternalLink className="w-3.5 h-3.5" />Steam
                       </a>
-                      <a href={r.yooma_url || `https://yooma.su/card/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
+                      <a href={r.yooma_url || `https://yooma.su/card/${r.steam_id}`} target="_blank" rel="noopener noreferrer" title="Открыть профиль на Yooma"
                         className="flex items-center gap-1 px-3 py-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-lg text-sm font-medium transition-all">
                         <ExternalLink className="w-3.5 h-3.5" />Yooma
                       </a>
@@ -321,15 +322,15 @@ export default function CheckerPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
-                      <a href={r.fear_url || `https://fearproject.ru/profile/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
+                      <a href={r.fear_url || `https://fearproject.ru/profile/${r.steam_id}`} target="_blank" rel="noopener noreferrer" title="Открыть профиль на FearProject"
                         className="flex items-center gap-1 px-3 py-2 bg-[#4f7cff] hover:bg-[#3d6aff] text-white rounded-lg text-sm font-medium transition-all">
-                        <ExternalLink className="w-3.5 h-3.5" />Fear
+                        <ExternalLink className="w-3.5 h-3.5" />FearProject
                       </a>
-                      <a href={r.steam_url || `https://steamcommunity.com/profiles/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
+                      <a href={r.steam_url || `https://steamcommunity.com/profiles/${r.steam_id}`} target="_blank" rel="noopener noreferrer" title="Открыть профиль в Steam"
                         className="flex items-center gap-1 px-3 py-2 bg-[#1b2838] hover:bg-[#1e2f42] border border-[#2a475e]/50 text-[#66c0f4] rounded-lg text-sm font-medium transition-all">
                         <ExternalLink className="w-3.5 h-3.5" />Steam
                       </a>
-                      <a href={r.yooma_url || `https://yooma.su/card/${r.steam_id}`} target="_blank" rel="noopener noreferrer"
+                      <a href={r.yooma_url || `https://yooma.su/card/${r.steam_id}`} target="_blank" rel="noopener noreferrer" title="Открыть профиль на Yooma"
                         className="flex items-center gap-1 px-3 py-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 rounded-lg text-sm font-medium transition-all">
                         <ExternalLink className="w-3.5 h-3.5" />Yooma
                       </a>

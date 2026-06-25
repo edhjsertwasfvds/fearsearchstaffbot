@@ -27,6 +27,14 @@ type FearAPIHandler struct {
 
 	adminPunishCache   map[string]*adminPunishCacheEntry
 	adminPunishCacheMu sync.RWMutex
+
+	serversCache   []byte
+	serversCacheMu sync.RWMutex
+	serversCacheAt time.Time
+
+	leaderboardCache   []byte
+	leaderboardCacheMu sync.RWMutex
+	leaderboardCacheAt time.Time
 }
 
 type adminPunishCacheEntry struct {
@@ -193,10 +201,47 @@ func (h *FearAPIHandler) GetName(steamID string) ProfileInfo {
 }
 
 func (h *FearAPIHandler) GetServers(w http.ResponseWriter, r *http.Request) {
-	h.proxyGet(w, r, "https://api.fearproject.ru/servers")
+	h.serversCacheMu.RLock()
+	if h.serversCache != nil && time.Since(h.serversCacheAt) < 30*time.Second {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(h.serversCache)
+		h.serversCacheMu.RUnlock()
+		return
+	}
+	h.serversCacheMu.RUnlock()
+
+	req, _ := http.NewRequest("GET", "https://api.fearproject.ru/servers", nil)
+	for k, v := range h.fearHeaders() {
+		req.Header[k] = v
+	}
+	resp, err := h.client.Do(req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"fear api error: %s"}`, err.Error()), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(body)
+
+	h.serversCacheMu.Lock()
+	h.serversCache = body
+	h.serversCacheAt = time.Now()
+	h.serversCacheMu.Unlock()
 }
 
 func (h *FearAPIHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
+	h.leaderboardCacheMu.RLock()
+	if h.leaderboardCache != nil && time.Since(h.leaderboardCacheAt) < 5*time.Minute {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(h.leaderboardCache)
+		h.leaderboardCacheMu.RUnlock()
+		return
+	}
+	h.leaderboardCacheMu.RUnlock()
+
 	type lbPlayer struct {
 		SteamID string  `json:"steam_id"`
 		Name    string  `json:"name"`
@@ -241,12 +286,19 @@ func (h *FearAPIHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) 
 		allPlayers = allPlayers[:1000]
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	responseBytes, _ := json.Marshal(map[string]interface{}{
 		"success": true,
 		"players": allPlayers,
 		"total":   len(allPlayers),
 	})
+
+	h.leaderboardCacheMu.Lock()
+	h.leaderboardCache = responseBytes
+	h.leaderboardCacheAt = time.Now()
+	h.leaderboardCacheMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(responseBytes)
 }
 
 func (h *FearAPIHandler) GetProfile(w http.ResponseWriter, r *http.Request) {

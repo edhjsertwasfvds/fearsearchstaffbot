@@ -174,6 +174,8 @@ func (db *DB) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_vdf_history_steamid ON vdf_history(steamid)`,
 		`CREATE INDEX IF NOT EXISTS idx_vdf_history_check_id ON vdf_history(check_id)`,
+		`ALTER TABLE vdf_history ADD COLUMN IF NOT EXISTS attachment_url TEXT`,
+		`ALTER TABLE vdf_history ADD COLUMN IF NOT EXISTS message_url TEXT`,
 		// Shared tables created by bot, ensured here for fresh backend deployments
 		`CREATE TABLE IF NOT EXISTS punishments (
 			id BIGINT PRIMARY KEY,
@@ -910,6 +912,41 @@ func (db *DB) GetLoginHistory(limit, offset int) ([]map[string]interface{}, int,
 	return result, total, nil
 }
 
+func (db *DB) GetUserLoginHistory(discordID string, limit int) ([]map[string]interface{}, error) {
+	if db.pool == nil {
+		return nil, fmt.Errorf("no database")
+	}
+	ctx := context.Background()
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := db.pool.Query(ctx, `
+		SELECT lh.ip_address, lh.user_agent, lh.logged_in_at::text
+		FROM login_history lh
+		WHERE lh.discord_id = $1
+		ORDER BY lh.id DESC
+		LIMIT $2
+	`, discordID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		var ip, userAgent, loggedAt string
+		if err := rows.Scan(&ip, &userAgent, &loggedAt); err != nil {
+			continue
+		}
+		result = append(result, map[string]interface{}{
+			"ip_address":   ip,
+			"user_agent":   userAgent,
+			"logged_in_at": loggedAt,
+		})
+	}
+	return result, nil
+}
+
 func (db *DB) saveVDFCheckKV(checkID int, filename, attachmentURL, messageURL string, results []byte, steamids []string, bannedCount int) error {
 	data, err := db.GetKVStore("vdf_checks.json")
 	if err != nil {
@@ -1037,7 +1074,8 @@ func (db *DB) GetVDFHistoryDetailed() ([]map[string]interface{}, error) {
 	rows, err := db.pool.Query(ctx, `
 		SELECT steamid, nickname, fear_banned, fear_reason, fear_unban_time,
 		       vac_banned, vac_days_ago, game_bans, yooma_banned, yooma_reason,
-		       admin_group, config_hash, filename, check_id, created_at::text
+		       admin_group, config_hash, filename, check_id, created_at::text,
+		       attachment_url, message_url
 		FROM vdf_history
 		ORDER BY id DESC
 	`)
@@ -1050,30 +1088,34 @@ func (db *DB) GetVDFHistoryDetailed() ([]map[string]interface{}, error) {
 		var (
 			steamID, nickname, fearReason, fearUnbanTime, yoomaReason string
 			adminGroup, configHash, filename, createdAt              string
+			attachmentURL, messageURL                                string
 			fearBanned, vacBanned, yoomaBanned                       bool
 			vacDaysAgo, gameBans, checkID                            int
 		)
 		if err := rows.Scan(&steamID, &nickname, &fearBanned, &fearReason, &fearUnbanTime,
 			&vacBanned, &vacDaysAgo, &gameBans, &yoomaBanned, &yoomaReason,
-			&adminGroup, &configHash, &filename, &checkID, &createdAt); err != nil {
+			&adminGroup, &configHash, &filename, &checkID, &createdAt,
+			&attachmentURL, &messageURL); err != nil {
 			continue
 		}
 		result = append(result, map[string]interface{}{
-			"steamid":        steamID,
-			"nickname":       nickname,
-			"fear_banned":    fearBanned,
-			"fear_reason":    fearReason,
+			"steamid":         steamID,
+			"nickname":        nickname,
+			"fear_banned":     fearBanned,
+			"fear_reason":     fearReason,
 			"fear_unban_time": fearUnbanTime,
-			"vac_banned":     vacBanned,
-			"vac_days_ago":   vacDaysAgo,
-			"game_bans":      gameBans,
-			"yooma_banned":   yoomaBanned,
-			"yooma_reason":   yoomaReason,
-			"admin_group":    adminGroup,
-			"config_hash":    configHash,
-			"filename":       filename,
-			"check_id":       checkID,
-			"created_at":     createdAt,
+			"vac_banned":      vacBanned,
+			"vac_days_ago":    vacDaysAgo,
+			"game_bans":       gameBans,
+			"yooma_banned":    yoomaBanned,
+			"yooma_reason":    yoomaReason,
+			"admin_group":     adminGroup,
+			"config_hash":     configHash,
+			"filename":        filename,
+			"check_id":        checkID,
+			"created_at":      createdAt,
+			"attachment_url":  attachmentURL,
+			"message_url":     messageURL,
 		})
 	}
 	return result, nil
@@ -1323,6 +1365,65 @@ func (db *DB) GetStaffPunishmentStats(since int64) (map[string]map[string]int, e
 			stats[adminSteam]["mutes"] = count
 		}
 		stats[adminSteam]["total"] += count
+	}
+	return stats, nil
+}
+
+func (db *DB) GetStaffPunishmentStatsDetailed(since int64) (map[string]map[string]int, error) {
+	if db.pool == nil {
+		return nil, fmt.Errorf("no database")
+	}
+	ctx := context.Background()
+	rows, err := db.pool.Query(ctx, `
+		SELECT admin_steamid, type, status, COUNT(*)::int as count
+		FROM punishments WHERE created >= $1 AND admin_steamid != ''
+		GROUP BY admin_steamid, type, status
+	`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	stats := make(map[string]map[string]int)
+	for rows.Next() {
+		var adminSteam string
+		var ptype, status, count int
+		if err := rows.Scan(&adminSteam, &ptype, &status, &count); err != nil {
+			continue
+		}
+		if stats[adminSteam] == nil {
+			stats[adminSteam] = map[string]int{
+				"total_bans": 0, "total_mutes": 0,
+				"active_bans": 0, "active_mutes": 0,
+				"removed_bans": 0, "removed_mutes": 0,
+				"expired_bans": 0, "expired_mutes": 0,
+			}
+		}
+		isBan := ptype == 1
+		switch status {
+		case 1:
+			if isBan {
+				stats[adminSteam]["active_bans"] += count
+			} else {
+				stats[adminSteam]["active_mutes"] += count
+			}
+		case 2:
+			if isBan {
+				stats[adminSteam]["removed_bans"] += count
+			} else {
+				stats[adminSteam]["removed_mutes"] += count
+			}
+		case 4:
+			if isBan {
+				stats[adminSteam]["expired_bans"] += count
+			} else {
+				stats[adminSteam]["expired_mutes"] += count
+			}
+		}
+		if isBan {
+			stats[adminSteam]["total_bans"] += count
+		} else {
+			stats[adminSteam]["total_mutes"] += count
+		}
 	}
 	return stats, nil
 }

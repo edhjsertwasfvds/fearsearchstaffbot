@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -170,9 +171,36 @@ func (h *DropsHandler) fetchFeed() ([]DropItem, error) {
 	}
 	defer resp.Body.Close()
 
-	var items []DropItem
-	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
+	}
+
+	var raw interface{}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, err
+	}
+
+	var items []DropItem
+	switch v := raw.(type) {
+	case []interface{}:
+		b, _ := json.Marshal(v)
+		json.Unmarshal(b, &items)
+	case map[string]interface{}:
+		if feed, ok := v["feed"].([]interface{}); ok {
+			b, _ := json.Marshal(feed)
+			json.Unmarshal(b, &items)
+		} else if data, ok := v["data"].([]interface{}); ok {
+			b, _ := json.Marshal(data)
+			json.Unmarshal(b, &items)
+		} else if results, ok := v["results"].([]interface{}); ok {
+			b, _ := json.Marshal(results)
+			json.Unmarshal(b, &items)
+		}
+	}
+
+	if len(items) == 0 {
+		return nil, fmt.Errorf("unexpected drops feed format")
 	}
 
 	out, _ := json.Marshal(items)

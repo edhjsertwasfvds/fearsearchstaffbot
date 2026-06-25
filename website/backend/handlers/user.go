@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"fearstaff-api/config"
 	"fearstaff-api/database"
@@ -14,6 +16,9 @@ import (
 type UserHandler struct {
 	cfg *config.Config
 	db  *database.DB
+	staffCacheMu    sync.RWMutex
+	staffCacheData  []byte
+	staffCacheAt    time.Time
 }
 
 func NewUserHandler(cfg *config.Config, db *database.DB) *UserHandler {
@@ -30,6 +35,15 @@ func (h *UserHandler) isStaffGroup(groupName string) bool {
 }
 
 func (h *UserHandler) GetStaff(w http.ResponseWriter, r *http.Request) {
+	h.staffCacheMu.RLock()
+	if h.staffCacheData != nil && time.Since(h.staffCacheAt) < 60*time.Second {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(h.staffCacheData)
+		h.staffCacheMu.RUnlock()
+		return
+	}
+	h.staffCacheMu.RUnlock()
+
 	result := make([]map[string]interface{}, 0)
 
 	// Priority 1: admins + profiles tables (synced by bot to PG)
@@ -164,10 +178,23 @@ func (h *UserHandler) GetStaff(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"success": true,
 		"data":    result,
-	})
+	}
+	responseBytes, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, `{"error":"failed to encode"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.staffCacheMu.Lock()
+	h.staffCacheData = responseBytes
+	h.staffCacheAt = time.Now()
+	h.staffCacheMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(responseBytes)
 }
 
 func (h *UserHandler) GetStaffByGroup(w http.ResponseWriter, r *http.Request) {

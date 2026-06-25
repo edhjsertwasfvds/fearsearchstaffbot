@@ -65,15 +65,18 @@ export default function BansAndMutesPage() {
   const fetchPunishments = useCallback(async () => {
     setLoading(true);
     try {
-      const type = activeTab === 'bans' ? '1' : '2';
-      const params: any = { type };
-      if (staffSearch) {
-        params.admin_steamid = staffSearch;
-      }
-      const res = await api.getAllPunishments(params);
-      let items: Punishment[] = res.punishments || [];
+      const type = activeTab === 'bans' ? 1 : 2;
+      let items: Punishment[] = [];
 
-      if (!staffSearch && staffSteamIds.size > 0) {
+      if (staffSearch) {
+        const res = await api.getPunishmentsByAdminPG(staffSearch, type, 5000);
+        items = res.punishments || [];
+      } else {
+        const res = await api.getStaffPunishments({ type, limit: 5000 });
+        items = res.punishments || [];
+      }
+
+      if (staffSteamIds.size > 0) {
         items = items.filter((p) => staffSteamIds.has(p.admin_steamid));
       }
 
@@ -118,7 +121,7 @@ export default function BansAndMutesPage() {
     }
     setStaffSearching(true);
     try {
-      const res = await api.getAllPunishments({ admin_steamid: staffSearch.trim() });
+      const res = await api.getPunishmentsByAdminPG(staffSearch.trim(), 0, 5000);
       const items: Punishment[] = res.punishments || [];
       const bans = items.filter(p => p.type === 1);
       const mutes = items.filter(p => p.type === 2);

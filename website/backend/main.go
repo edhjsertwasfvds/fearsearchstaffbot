@@ -63,6 +63,7 @@ func main() {
 	mux.Handle("/api/admin/users", handlers.AuthMiddleware(cfg, http.HandlerFunc(admin.GetUsers)))
 	mux.Handle("/api/admin/user/level", handlers.AuthMiddleware(cfg, http.HandlerFunc(admin.UpdateUserLevel)))
 	mux.Handle("/api/admin/user/block", handlers.AuthMiddleware(cfg, http.HandlerFunc(admin.BlockUser)))
+	mux.Handle("/api/admin/user/sessions", handlers.AuthMiddleware(cfg, http.HandlerFunc(admin.GetUserSessions)))
 
 	mux.Handle("/api/whitelist", handlers.AuthMiddleware(cfg, http.HandlerFunc(whitelist.GetEntries)))
 	mux.Handle("/api/whitelist/add", handlers.AuthMiddleware(cfg, http.HandlerFunc(whitelist.AddEntry)))

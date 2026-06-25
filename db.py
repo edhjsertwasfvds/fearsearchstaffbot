@@ -94,6 +94,12 @@ def _init_table():
                 CREATE INDEX IF NOT EXISTS idx_vdf_history_check_id ON vdf_history(check_id)
             """)
             cur.execute("""
+                ALTER TABLE vdf_history ADD COLUMN IF NOT EXISTS attachment_url TEXT
+            """)
+            cur.execute("""
+                ALTER TABLE vdf_history ADD COLUMN IF NOT EXISTS message_url TEXT
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS admins (
                     admin_id BIGINT PRIMARY KEY,
                     steamid TEXT NOT NULL UNIQUE,
@@ -337,7 +343,8 @@ def db_get_all_linked_steamids(steamid: str) -> list[str]:
         return [steamid]
 
 
-def db_save_vdf_history(results: list[dict], config_hash: str = "", filename: str = "", check_id: int = 0) -> bool:
+def db_save_vdf_history(results: list[dict], config_hash: str = "", filename: str = "", check_id: int = 0,
+                        attachment_url: str = "", message_url: str = "") -> bool:
     """Сохранить результаты VDF проверки в историю (по одному на каждый SteamID)."""
     conn = _get_conn()
     if not conn:
@@ -351,8 +358,8 @@ def db_save_vdf_history(results: list[dict], config_hash: str = "", filename: st
                     INSERT INTO vdf_history
                         (check_id, steamid, nickname, fear_banned, fear_reason, fear_unban_time,
                          vac_banned, vac_days_ago, game_bans, yooma_banned, yooma_reason,
-                         admin_group, config_hash, filename, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                         admin_group, config_hash, filename, attachment_url, message_url, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 """, (
                     check_id,
                     r.get("steamid", ""),
@@ -371,6 +378,8 @@ def db_save_vdf_history(results: list[dict], config_hash: str = "", filename: st
                     r.get("admin_group", ""),
                     config_hash,
                     filename,
+                    attachment_url,
+                    message_url,
                 ))
         return True
     except Exception as e:

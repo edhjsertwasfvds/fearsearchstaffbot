@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"fearstaff-api/config"
 	"fearstaff-api/database"
@@ -47,16 +50,20 @@ func (h *AdminHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 		isOwner := u.DiscordID == OWNER_DISCORD_ID
 		isBlocked := level < 0 || u.StaffGroup == "UNDEFINED" || u.StaffGroup == "STAFF"
 
+		isOnline := !u.LastLogin.IsZero() && time.Since(u.LastLogin) < 15*time.Minute
+
 		result = append(result, map[string]interface{}{
 			"discord_id":   u.DiscordID,
 			"username":     u.Username,
 			"display_name": u.DisplayName,
 			"avatar":       u.Avatar,
+			"steam_id":     u.SteamID,
 			"staff_group":  u.StaffGroup,
 			"staff_role":   roleName,
 			"level":        level,
 			"is_blocked":   isBlocked,
 			"is_owner":     isOwner,
+			"is_online":    isOnline,
 			"last_login":   u.LastLogin,
 			"guild_roles":  u.GuildRoles,
 		})
@@ -79,6 +86,33 @@ func (h *AdminHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data":    result,
+	})
+}
+
+func (h *AdminHandler) GetUserSessions(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		http.Error(w, `{"error":"database not available"}`, http.StatusInternalServerError)
+		return
+	}
+
+	discordID := r.URL.Query().Get("discord_id")
+	if discordID == "" {
+		http.Error(w, `{"error":"discord_id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	sessions, err := h.db.GetUserLoginHistory(discordID, limit)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"sessions": sessions,
+		"total":    len(sessions),
 	})
 }
 

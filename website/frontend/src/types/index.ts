@@ -131,10 +131,12 @@ export interface AdminUser {
   username: string;
   display_name: string;
   avatar: string;
+  steam_id?: string;
   staff_group: string;
   staff_role: string;
   level: number;
   is_blocked: boolean;
+  is_online?: boolean;
   last_login: string;
   guild_roles: string[];
 }

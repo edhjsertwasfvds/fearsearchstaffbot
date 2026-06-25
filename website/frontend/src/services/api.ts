@@ -110,7 +110,7 @@ class ApiService {
   }
 
   async getStaffStats(steamids: string[]) {
-    return this.request(`/api/punishments/staff-stats?steamids=${steamids.join(',')}`);
+    return this.request(`/api/staff/punishments/staff-stats?steamids=${steamids.join(',')}`);
   }
 
   async getStaffPunishments(params?: { type?: number; limit?: number; offset?: number }) {
@@ -276,6 +276,13 @@ class ApiService {
 
   async getAdminUsers() {
     return this.request('/api/admin/users');
+  }
+
+  async getUserSessions(discordId: string, limit?: number) {
+    const params = new URLSearchParams();
+    params.set('discord_id', discordId);
+    if (limit) params.set('limit', String(limit));
+    return this.request(`/api/admin/user/sessions?${params.toString()}`);
   }
 
   async updateUserLevel(discordId: string, level: number, group: string) {

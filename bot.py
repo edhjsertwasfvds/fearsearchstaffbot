@@ -4965,7 +4965,8 @@ def _save_vdf_check(results: list[dict], filename: str, attachment_url: str = ""
         if steamids and vdf_text:
             config_hash = hashlib.sha256(vdf_text.encode("utf-8", errors="ignore")).hexdigest()[:64]
             _db.db_save_config_accounts(config_hash, steamids, filename)
-            _db.db_save_vdf_history(results, config_hash=config_hash, filename=filename, check_id=check_id)
+            _db.db_save_vdf_history(results, config_hash=config_hash, filename=filename, check_id=check_id,
+                                    attachment_url=attachment_url, message_url=message_url)
     except Exception as e:
         print(f"⚠️ Ошибка сохранения VDF в PostgreSQL: {e}")
 
@@ -7529,6 +7530,9 @@ async def _notify_bans_for_player(steamid: str, nickname: str, channel, session:
             except Exception as e:
                 _log(f"⚠️ Не удалось отправить бан-уведомление (yooma): {e}")
 
+            if not _autoban_settings.get("yooma_cheat_autoban_enabled", True):
+                continue
+
             try:
                 if _is_cheat_reason(p.get("reason", "")):
                     cheat_channel = bot.get_channel(YOOMA_CHEAT_CHANNEL_ID)
@@ -8849,6 +8853,26 @@ def _save_autoclose_settings():
     _save_json_atomic(AUTOCLOSE_SETTINGS_FILE, _autoclose_settings)
 
 _autoclose_settings: dict = _load_autoclose_settings()
+
+# Настройки автобанов
+AUTOBAN_SETTINGS_FILE = Path(__file__).parent / "autoban_settings.json"
+_AUTOBAN_DEFAULTS: dict = {
+    "yooma_cheat_autoban_enabled": True,  # автобан на Fear за читы на yooma.su
+}
+
+def _load_autoban_settings() -> dict:
+    if AUTOBAN_SETTINGS_FILE.exists():
+        try:
+            data = json.loads(AUTOBAN_SETTINGS_FILE.read_text(encoding="utf-8"))
+            return {**_AUTOBAN_DEFAULTS, **data}
+        except Exception:
+            pass
+    return dict(_AUTOBAN_DEFAULTS)
+
+def _save_autoban_settings():
+    _save_json_atomic(AUTOBAN_SETTINGS_FILE, _autoban_settings)
+
+_autoban_settings: dict = _load_autoban_settings()
 
 def _load_admins_cache() -> list[dict]:
     if ADMINS_CACHE_FILE.exists():

@@ -52,7 +52,8 @@ const roleNames: Record<string, string> = {
   DOSTUP: 'Доступ',
 };
 
-const groups = ['ALL', 'OWNER', 'OWNER_ALT', 'CURATOR', 'GLADMIN', 'STADMIN', 'ADMIN_PLUS', 'ADMIN', 'STMODER', 'MODER', 'MLMODER', 'STAFF', 'SYSTEM_ADMIN', 'DOSTUP'];
+const GROUP_ORDER = ['MLMODER', 'MODER', 'STMODER', 'ADMIN', 'ADMIN_PLUS', 'STADMIN', 'GLADMIN', 'STAFF', 'SYSTEM_ADMIN', 'OWNER', 'OWNER_ALT', 'CURATOR', 'DOSTUP'];
+const groups = ['ALL', ...GROUP_ORDER];
 
 interface StaffStatsMap {
   [steamid: string]: {

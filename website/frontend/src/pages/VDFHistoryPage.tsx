@@ -16,6 +16,7 @@ interface VDFHistoryItem {
   yooma_banned: boolean;
   yooma_reason: string;
   admin_group: string;
+  registered?: boolean;
 }
 
 interface VDFCheck {
@@ -312,23 +313,35 @@ export default function VDFHistoryPage() {
                                     ) : (
                                       <Check className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
                                     )}
-                                    <span className="text-xs font-medium text-white">{r.nickname || 'Unknown'}</span>
-                                    <span className={`text-xs font-mono ${banned ? 'text-red-400' : warning ? 'text-yellow-400' : 'text-gray-400'}`}>{r.steamid}</span>
+                                    {(() => {
+                                      const isRegistered = r.registered || (!!r.nickname && r.nickname !== 'Unknown');
+                                      return (
+                                        <>
+                                          <span className="text-xs font-medium text-white">{r.nickname || 'Unknown'}</span>
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isRegistered ? 'bg-emerald-500/10 text-emerald-400' : 'bg-gray-500/10 text-gray-500'}`}>
+                                            {isRegistered ? 'FearProject' : 'Не зарегистр.'}
+                                          </span>
+                                          <span className={`text-xs font-mono ${banned ? 'text-red-400' : warning ? 'text-yellow-400' : 'text-gray-400'}`}>{r.steamid}</span>
+                                        </>
+                                      );
+                                    })()}
                                     <a
                                       href={`https://fearproject.ru/profile/${r.steamid}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-gray-600 hover:text-blue-400 transition-colors flex-shrink-0"
+                                      title="Профиль на FearProject"
+                                      className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-blue-400 transition-colors flex-shrink-0"
                                     >
-                                      <ExternalLink className="w-3 h-3" />
+                                      <ExternalLink className="w-3 h-3" />Fear
                                     </a>
                                     <a
                                       href={`https://steamcommunity.com/profiles/${r.steamid}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="text-gray-600 hover:text-blue-400 transition-colors flex-shrink-0"
+                                      title="Профиль в Steam"
+                                      className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-blue-400 transition-colors flex-shrink-0"
                                     >
-                                      <ExternalLink className="w-3 h-3" />
+                                      <ExternalLink className="w-3 h-3" />Steam
                                     </a>
                                   </div>
 

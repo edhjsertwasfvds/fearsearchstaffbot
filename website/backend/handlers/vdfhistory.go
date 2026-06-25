@@ -276,10 +276,12 @@ func (h *VDFHistoryHandler) computeHistory() ([]VDFCheckHistory, error) {
 
 func (h *VDFHistoryHandler) buildHistoryFromDB(rows []map[string]interface{}) []VDFCheckHistory {
 	type checkGroup struct {
-		filename   string
-		checkID    int
-		timestamp  string
-		results    []VDFHistoryItem
+		filename      string
+		checkID       int
+		timestamp     string
+		attachmentURL string
+		messageURL    string
+		results       []VDFHistoryItem
 	}
 
 	groups := make(map[int]*checkGroup)
@@ -306,6 +308,12 @@ func (h *VDFHistoryHandler) buildHistoryFromDB(rows []map[string]interface{}) []
 		}
 
 		g := groups[checkID]
+		if g.attachmentURL == "" {
+			g.attachmentURL = mustString(row["attachment_url"])
+		}
+		if g.messageURL == "" {
+			g.messageURL = mustString(row["message_url"])
+		}
 		g.results = append(g.results, VDFHistoryItem{
 			SteamID:     mustString(row["steamid"]),
 			Nickname:    mustString(row["nickname"]),
@@ -333,13 +341,15 @@ func (h *VDFHistoryHandler) buildHistoryFromDB(rows []map[string]interface{}) []
 			}
 		}
 		history = append(history, VDFCheckHistory{
-			ID:          checkID,
-			Filename:    g.filename,
-			Timestamp:   g.timestamp,
-			Count:       len(g.results),
-			BannedCount: banned,
-			SteamIDs:    steamids,
-			Results:     g.results,
+			ID:            checkID,
+			Filename:      g.filename,
+			Timestamp:     g.timestamp,
+			AttachmentURL: g.attachmentURL,
+			MessageURL:    g.messageURL,
+			Count:         len(g.results),
+			BannedCount:   banned,
+			SteamIDs:      steamids,
+			Results:       g.results,
 		})
 	}
 
