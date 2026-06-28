@@ -8478,19 +8478,27 @@ async def _resolve_level_from_discord_roles(discord_id: str) -> int:
 
     # Собираем роли со всех серверов, где есть бот
     user_roles = set()
+    member_found = False
     for guild in bot.guilds:
         try:
             member = guild.get_member(int(discord_id))
             if not member:
                 try:
                     member = await guild.fetch_member(int(discord_id))
+                except discord.errors.PrivilegedIntentsRequired as e:
+                    _log(f"⚠️ [Panel] Discord intents не включены: нельзя получить роли. {e}", discord=False)
+                    continue
                 except Exception:
                     continue
             if member:
+                member_found = True
                 for role in member.roles:
                     user_roles.add(str(role.id))
         except Exception:
             continue
+
+    if not member_found:
+        _log(f"⚠️ [Panel] Участник {discord_id} не найден на серверах. Возможно, intents не включены или пользователь не на сервере.", discord=False)
 
     if user_roles & blocked_ids:
         return 0
@@ -8508,11 +8516,29 @@ async def _resolve_level_from_discord_roles(discord_id: str) -> int:
             except Exception:
                 continue
         elif key == "DISCORD_ROLE_LEVELS":
+            raw = str(value).strip()
+            if not raw:
+                continue
+            # Поддерживаем JSON {"role_id": level, ...}
             try:
-                data = json.loads(value)
-                for rid, lvl in data.items():
-                    role_levels[str(rid)] = int(lvl)
+                if raw.startswith("{") or raw.startswith("["):
+                    data = json.loads(raw)
+                    if isinstance(data, dict):
+                        for rid, lvl in data.items():
+                            role_levels[str(rid)] = int(lvl)
+                    continue
             except Exception:
+                pass
+            # Поддерживаем формат сайта: role_id:level,role_id:level
+            try:
+                for part in raw.split(","):
+                    if not part.strip():
+                        continue
+                    rid, lvl_str = part.split(":")
+                    if rid.strip() and lvl_str.strip():
+                        role_levels[rid.strip()] = int(lvl_str.strip())
+            except Exception:
+                _log(f"⚠️ [Panel] Не удалось разобрать DISCORD_ROLE_LEVELS: {raw}", discord=False)
                 continue
 
     max_level = int(os.getenv("DISCORD_DEFAULT_LEVEL") or "0")
