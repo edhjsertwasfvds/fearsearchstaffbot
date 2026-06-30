@@ -9368,16 +9368,20 @@ async def _check_vdf_accounts(steamids: list[str]) -> list[dict]:
                 return await _check_yooma_ban(session, sid)
         yooma_future = asyncio.gather(*[yooma_with_sem(sid) for sid in steamids])
 
-        # Fear — с семафором 50 и кэшем 5 минут
+        # Fear — профиль и проверка бана через /bans/check (более надёжно)
         fear_sem = asyncio.Semaphore(50)
         async def fear_with_sem(sid: str):
             async with fear_sem:
                 return await _fetch_fear_fast(session, sid)
+        async def fear_ban_with_sem(sid: str):
+            async with fear_sem:
+                return await _fetch_fear_ban_check(session, sid)
         fear_future = asyncio.gather(*[fear_with_sem(sid) for sid in steamids])
+        fear_ban_future = asyncio.gather(*[fear_ban_with_sem(sid) for sid in steamids])
 
         # Все источники — параллельно
-        (bans_results, summary_results), yooma_results_raw, fear_profiles = await asyncio.gather(
-            steam_future, yooma_future, fear_future
+        (bans_results, summary_results), yooma_results_raw, fear_profiles, fear_ban_checks = await asyncio.gather(
+            steam_future, yooma_future, fear_future, fear_ban_future
         )
 
         bans_map = {}
@@ -9396,11 +9400,13 @@ async def _check_vdf_accounts(steamids: list[str]) -> list[dict]:
 
         yooma_map = {sid: ydata for sid, ydata in zip(steamids, yooma_results_raw)}
         fear_map = {sid: profile for sid, profile in zip(steamids, fear_profiles)}
+        fear_ban_map = {sid: ban_data for sid, ban_data in zip(steamids, fear_ban_checks)}
 
         for sid in steamids:
             steam_ban  = bans_map.get(sid, {})
             summary    = summary_map.get(sid, {})
             fear       = fear_map.get(sid)
+            fear_ban   = fear_ban_map.get(sid)
 
             vac_banned    = steam_ban.get("VACBanned", False)
             vac_days      = steam_ban.get("DaysSinceLastBan", 0)
@@ -9412,8 +9418,19 @@ async def _check_vdf_accounts(steamids: list[str]) -> list[dict]:
             on_fear       = fear is not None
             fear_name     = fear.get("name", "") if fear else ""
 
-            ban_info      = fear.get("banInfo", {}) if fear else {}
-            fear_banned   = ban_info.get("isBanned", False)
+            # Основной источник — banInfo из профиля, но /bans/check более надёжен.
+            profile_ban_info = fear.get("banInfo", {}) if fear else {}
+            check_ban_info   = fear_ban if isinstance(fear_ban, dict) else {}
+
+            # Если /bans/check говорит, что игрок забанен — доверяем ему.
+            if check_ban_info.get("isBanned") or check_ban_info.get("is_banned") or check_ban_info.get("banned"):
+                ban_info = check_ban_info
+            elif profile_ban_info.get("isBanned"):
+                ban_info = profile_ban_info
+            else:
+                ban_info = {}
+
+            fear_banned   = bool(ban_info.get("isBanned") or ban_info.get("is_banned") or ban_info.get("banned"))
             fear_reason   = ban_info.get("reason", "") if fear_banned else ""
             fear_unban_ts = ban_info.get("unbanTimestamp") if fear_banned else None
             fear_unban    = ""
@@ -9774,117 +9791,7 @@ async def on_message(message: discord.Message):
 
                 await msg.edit(content=f"🔍 Найдено **{len(steamids)}** аккаунтов, начинаю проверку...")
 
-                results = []
-                async with aiohttp.ClientSession() as session:
-                    # ВСЁ параллельно: Steam API + Yooma + Fear — одновременно
-                    bans_tasks    = []
-                    summary_tasks = []
-                    for i in range(0, len(steamids), 100):
-                        batch = steamids[i:i+100]
-                        ids   = ','.join(batch)
-                        bans_tasks.append(_fetch_json(session,
-                            f"https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key={STEAM_API_KEY}&steamids={ids}"))
-                        summary_tasks.append(_fetch_json(session,
-                            f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={ids}"))
-
-                    # Запускаем Steam API
-                    steam_future = asyncio.gather(
-                        asyncio.gather(*bans_tasks),
-                        asyncio.gather(*summary_tasks)
-                    )
-
-                    # Yooma — с семафором 50 и кэшем 5 минут
-                    yooma_sem = asyncio.Semaphore(50)
-                    async def yooma_with_sem(sid: str):
-                        async with yooma_sem:
-                            return await _check_yooma_ban(session, sid)
-                    yooma_future = asyncio.gather(*[yooma_with_sem(sid) for sid in steamids])
-
-                    # Fear API — только профиль (banInfo = 100% ответ)
-                    fear_map = {}
-                    fear_sem = asyncio.Semaphore(50)
-                    async def fetch_with_sem(sid):
-                        async with fear_sem:
-                            return await _fetch_fear_fast(session, sid)
-
-                    fear_future = asyncio.gather(*[fetch_with_sem(sid) for sid in steamids])
-
-                    # Ждём Steam API
-                    bans_results, summary_results = await steam_future
-
-                    bans_map = {}
-                    for data in bans_results:
-                        if data and "players" in data:
-                            for p in data["players"]:
-                                sid_key = p.get("SteamId") or p.get("SteamID") or p.get("steamid") or p.get("steamID", "")
-                                if sid_key:
-                                    bans_map[str(sid_key)] = p
-
-                    summary_map = {}
-                    for data in summary_results:
-                        if data and data.get("response", {}).get("players"):
-                            for p in data["response"]["players"]:
-                                summary_map[p["steamid"]] = p
-
-                    # Ждём Yooma + Fear параллельно
-                    yooma_results_raw = await yooma_future
-                    yooma_map = {sid: ydata for sid, ydata in zip(steamids, yooma_results_raw)}
-
-                    fear_profiles = await fear_future
-                    for sid, profile in zip(steamids, fear_profiles):
-                        fear_map[sid] = profile
-
-                    # Собираем результаты
-                    for sid in steamids:
-                        steam_ban  = bans_map.get(sid, {})
-                        summary    = summary_map.get(sid, {})
-                        fear       = fear_map.get(sid)
-
-                        vac_banned    = steam_ban.get("VACBanned", False)
-                        vac_days      = steam_ban.get("DaysSinceLastBan", 0)
-                        game_bans     = steam_ban.get("NumberOfGameBans", 0)
-                        community_ban = steam_ban.get("CommunityBanned", False)
-                        nickname      = summary.get("personaname", sid)
-                        yooma_data    = yooma_map.get(sid, {})
-
-                        on_fear     = fear is not None
-                        fear_name   = fear.get("name", "") if fear else ""
-
-                        # Только banInfo из профиля
-                        ban_info      = fear.get("banInfo", {}) if fear else {}
-                        fear_banned   = ban_info.get("isBanned", False)
-                        fear_reason   = ban_info.get("reason", "") if fear_banned else ""
-                        fear_unban_ts = ban_info.get("unbanTimestamp") if fear_banned else None
-                        fear_unban    = ""
-                        if fear_unban_ts:
-                            try:
-                                fear_unban = datetime.fromtimestamp(fear_unban_ts).strftime("%d.%m.%Y %H:%M")
-                            except Exception:
-                                pass
-
-                        ag = fear.get("adminGroup") if fear else None
-                        admin_group = ""
-                        if isinstance(ag, dict):
-                            admin_group = ag.get("group_name", "")
-                        if not admin_group or str(admin_group).isdigit():
-                            admin_group = (fear or {}).get("rank_name", "") if fear else ""
-                        if not admin_group or str(admin_group).isdigit():
-                            admin_group = (fear or {}).get("rank", "") if fear else ""
-
-                        results.append({
-                            "steamid":      sid,
-                            "nickname":     fear_name or nickname or sid,
-                            "on_fear":      on_fear,
-                            "fear_banned":  fear_banned,
-                            "fear_reason":  fear_reason,
-                            "fear_unban":   fear_unban,
-                            "vac_banned":   vac_banned,
-                            "vac_days":     vac_days,
-                            "game_bans":    game_bans,
-                            "community_ban":community_ban,
-                            "yooma_data":   yooma_data,
-                            "admin_group":  admin_group,
-                        })
+                results = await _check_vdf_accounts(steamids)
 
                 check_num = _save_vdf_check(results, attachment.filename, attachment.url, message.jump_url, vdf_text=text)
                 embeds = _build_vdf_embeds(results, attachment.filename)
