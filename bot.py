@@ -11213,6 +11213,34 @@ async def cmd_backup(interaction: discord.Interaction):
         await interaction.edit_original_response(content=f"❌ Ошибка загрузки: {e}")
 
 
+@tree.command(name="backup_debug", description="Показать информацию о таблицах в базе данных")
+async def cmd_backup_debug(interaction: discord.Interaction):
+    await interaction.response.send_message("⏳ Проверяю базу...", ephemeral=True)
+    import psycopg2 as _pg2
+    import psycopg2.extras as _pg2e
+    url = os.getenv("DATABASE_URL", "").strip()
+    if not url:
+        return await interaction.edit_original_response(content="❌ DATABASE_URL не задана")
+    try:
+        if "sslmode" not in url:
+            sep = "&" if "?" in url else "?"
+            url += f"{sep}sslmode=require"
+        conn = _pg2.connect(url, connect_timeout=10)
+        cur = conn.cursor(cursor_factory=_pg2e.RealDictCursor)
+        cur.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")
+        tables = [r['tablename'] for r in cur.fetchall()]
+        lines = [f"**Таблиц: {len(tables)}**\n"]
+        for t in tables:
+            cur.execute(f'SELECT COUNT(*) AS cnt FROM "{t}"')
+            cnt = cur.fetchone()['cnt']
+            lines.append(f"• `{t}`: {cnt} строк")
+        cur.close()
+        conn.close()
+        await interaction.edit_original_response(content="\n".join(lines))
+    except Exception as e:
+        await interaction.edit_original_response(content=f"❌ Ошибка: {e}")
+
+
 @tree.command(name="restore", description="Скачать последний бэкап базы из Discord")
 async def cmd_restore(interaction: discord.Interaction):
     ch = interaction.guild.get_channel(BACKUP_CHANNEL_ID) if interaction.guild else None
