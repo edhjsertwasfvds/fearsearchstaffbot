@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc libffi-dev postgresql-client \
+    libpq-dev gcc libffi-dev postgresql-client curl \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -9,9 +11,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py .
-COPY db.py .
-COPY gdrive_backup.py .
-COPY discord_backup.py .
+COPY bot.py db.py gdrive_backup.py discord_backup.py ./
+COPY VibeCodingBdd/ VibeCodingBdd/
+RUN cd VibeCodingBdd && npm install --omit=dev
 
-CMD ["python", "bot.py"]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

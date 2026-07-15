@@ -2726,6 +2726,40 @@ async def cmd_stafflist(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
+@tree.command(name="register", description="Зарегистрироваться на сайте fearsearch.pl")
+@app_commands.describe(login="Логин для сайта", password="Пароль для сайта")
+async def cmd_register(interaction: discord.Interaction, login: str, password: str):
+    if not _is_admin(interaction):
+        return await interaction.response.send_message("❌ Только для стаффа.", ephemeral=True)
+    if len(login) < 3 or len(login) > 32:
+        return await interaction.response.send_message("❌ Логин: 3-32 символа.", ephemeral=True)
+    if len(password) < 4:
+        return await interaction.response.send_message("❌ Пароль: минимум 4 символа.", ephemeral=True)
+    discord_name = interaction.user.name
+    discord_id = str(interaction.user.id)
+    try:
+        import urllib.request, json as _json
+        data = _json.dumps({"username": login, "password": password, "discord_name": discord_name, "discord_id": discord_id}).encode()
+        req = urllib.request.Request(
+            os.getenv("SITE_URL", "https://fearsearch.pl") + "/api/auth/register",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        resp = urllib.request.urlopen(req, timeout=10)
+        result = _json.loads(resp.read())
+        await interaction.response.send_message(
+            f"✅ Аккаунт создан!\n\n🔗 **Сайт:** <https://fearsearch.pl/login>\n👤 **Логин:** `{login}`\n🔑 **Пароль:** `{password}`\n\n⚠️ Сохрани данные, пароль не показывается повторно.",
+            ephemeral=True
+        )
+    except Exception as e:
+        err_text = str(e)
+        if "409" in err_text:
+            await interaction.response.send_message("❌ Логин уже занят. Выбери другой.", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Ошибка: {err_text[:200]}", ephemeral=True)
+
+
 # SteamID которые никогда не должны попадать в список стаффа
 _STAFF_BLACKLIST = {
     "76561199795013192", "76561199642664362", "76561198388989868",
