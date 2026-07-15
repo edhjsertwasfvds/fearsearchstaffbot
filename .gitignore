@@ -34,3 +34,8 @@ vdf_checks.json
 watch_history.json
 whitelist.json
 logs.*.json
+logs.*.csv
+fearsearch_backup_*.sql
+fearsearch_backup_*.json
+parse_logs*.py
+Текстовый документ*.txt
