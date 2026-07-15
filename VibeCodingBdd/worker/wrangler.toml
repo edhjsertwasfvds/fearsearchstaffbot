@@ -1,0 +1,23 @@
+name = "fear-punishments-ingest"
+main = "src/index.ts"
+compatibility_date = "2026-03-30"
+
+[triggers]
+crons = ["* * * * *"]
+
+[[queues.producers]]
+binding = "PUNISHMENTS_QUEUE"
+queue = "punishments-jobs"
+
+[[queues.consumers]]
+queue = "punishments-jobs"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 4
+
+[vars]
+PAGES_PER_TICK = "8"
+ACTIVE_WORKERS = "20"
+WORKERS_TOTAL = "20"
+COOLDOWN_SECONDS = "900"
+FEAR_PAGE_LIMIT = "10"

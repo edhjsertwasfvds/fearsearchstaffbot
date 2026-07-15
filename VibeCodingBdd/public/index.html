@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fear Staff Sync</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #09090b; }
+        .glass-panel {
+            background: rgba(22, 22, 26, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+        .grid-bg {
+            background-image: linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 32px 32px;
+            mask-image: radial-gradient(circle at 0 0, black 40%, transparent 80%);
+            -webkit-mask-image: radial-gradient(circle at 0 0, black 40%, transparent 80%);
+        }
+        body { scrollbar-width: thin; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+        .sort-btn { cursor: pointer; user-select: none; }
+        .sort-btn:hover { color: #fff; }
+        .sort-btn.active { color: #5865F2; }
+        .tab-btn { transition: all 0.2s; border-bottom: 2px solid transparent; }
+        .tab-btn.active { color: #5865F2; border-bottom-color: #5865F2; }
+        .tab-btn:hover { color: #fff; }
+        .online-card { transition: all 0.2s; }
+        .online-card:hover { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="text-white min-h-screen w-full relative overflow-x-hidden selection:bg-[#5865F2] selection:text-white">
+    <div class="fixed inset-0 pointer-events-none z-0">
+        <div class="absolute inset-0 grid-bg"></div>
+        <div class="absolute -top-[200px] -left-[200px] w-[600px] h-[600px] bg-[#5865F2] rounded-full blur-[120px] opacity-[0.07]"></div>
+    </div>
+
+    <div class="relative z-10 max-w-[1600px] mx-auto px-4 py-6">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold flex items-center gap-2">
+                    <i class="ph ph-shield-check text-[#5865F2]"></i>
+                    Fear Staff Sync
+                </h1>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="/staff-stats" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2">
+                    <i class="ph ph-chart-bar"></i> Статистика
+                </a>
+                <a href="/checker/" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2">
+                    <i class="ph ph-shield-check"></i> Checker
+                </a>
+                <a href="/vdf.html" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2">
+                    <i class="ph ph-files"></i> VDF History
+                </a>
+                <button id="refreshBtn" class="px-4 py-2 rounded-lg bg-[#5865F2] hover:bg-[#4752C4] text-sm font-semibold transition-colors flex items-center gap-2">
+                    <i class="ph ph-arrows-clockwise"></i> Обновить
+                </button>
+                <button id="logoutBtn" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2 text-gray-400 hover:text-white">
+                    <i class="ph ph-sign-out"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex items-center gap-6 border-b border-white/10 mb-4">
+            <button class="tab-btn active py-3 text-sm font-semibold flex items-center gap-2" data-tab="online">
+                <i class="ph ph-users text-emerald-400"></i> Online Admins
+                <span id="onlineCount" class="text-gray-500 font-normal text-xs"></span>
+            </button>
+            <button class="tab-btn py-3 text-sm font-semibold text-gray-400 flex items-center gap-2" data-tab="all">
+                <i class="ph ph-list"></i> All Admins
+                <span id="allCount" class="text-gray-500 font-normal text-xs"></span>
+            </button>
+        </div>
+
+        <!-- Tab: Online Admins -->
+        <div id="tab-online" class="tab-content active">
+            <div class="glass-panel rounded-xl p-4 mb-4">
+                <div class="flex items-center justify-between mb-3">
+                    <span id="onlineStatus" class="text-xs text-gray-500"></span>
+                </div>
+                <div id="onlineList" class="flex flex-wrap gap-2">
+                    <span class="text-gray-500 text-sm">Загрузка...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: All Admins -->
+        <div id="tab-all" class="tab-content">
+            <div class="glass-panel rounded-xl p-4 mb-4">
+                <div class="flex items-center gap-3">
+                    <i class="ph ph-magnifying-glass text-gray-500"></i>
+                    <input type="text" id="searchInput" placeholder="Поиск по имени, SteamID, Discord..."
+                        class="bg-transparent border-none outline-none text-white text-sm w-full placeholder-gray-500">
+                    <span id="status" class="text-sm text-gray-500 whitespace-nowrap"></span>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03]">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-white/5 text-gray-400 sticky top-0">
+                        <tr>
+                            <th class="px-3 py-3"></th>
+                            <th class="px-3 py-3 font-semibold">Имя</th>
+                            <th class="px-3 py-3 font-semibold">SteamID</th>
+                            <th class="px-3 py-3 font-semibold">Группа</th>
+                            <th class="px-3 py-3 font-semibold">Статус</th>
+                            <th class="px-3 py-3 font-semibold">Discord</th>
+                            <th class="px-3 py-3 font-semibold sort-btn" data-sort="rank">Место <span class="sort-arrow" id="arrow-rank"></span></th>
+                            <th class="px-3 py-3 font-semibold sort-btn" data-sort="kills">K/D <span class="sort-arrow" id="arrow-kills"></span></th>
+                            <th class="px-3 py-3 font-semibold sort-btn" data-sort="playtime">Часы <span class="sort-arrow" id="arrow-playtime"></span></th>
+                            <th class="px-3 py-3 font-semibold">Faceit</th>
+                            <th class="px-3 py-3 font-semibold">Бан</th>
+                            <th class="px-3 py-3 font-semibold">Обновлено</th>
+                            <th class="px-3 py-3 font-semibold">Ссылки</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rows"></tbody>
+                </table>
+            </div>
+
+            <div class="mt-4 text-center">
+                <span id="pagination" class="text-sm text-gray-500"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="/app.js"></script>
+</body>
+</html>
