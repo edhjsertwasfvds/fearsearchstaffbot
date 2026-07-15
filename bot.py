@@ -6583,7 +6583,7 @@ async def cmd_connectvoice(interaction: discord.Interaction, voice_id: str):
         return await interaction.response.send_message(f"❌ Не удалось подключиться: {e}", ephemeral=True)
 
     _log(f"🔊 [CONNECTVOICE] {interaction.user} подключил бота к войсу {channel.name} ({voice_id})", discord=False)
-    await interaction.response.send_message(f"✅ Подключился к **{channel.name}** и останусь там навсегда.")
+    await interaction.response.send_message(f"✅ Подключился к **{channel.name}** и останусь там навсегда.", ephemeral=True)
 
 
 def _build_stats_embed(steamid: str, date_from: datetime | None = None, date_to: datetime | None = None) -> discord.Embed | None:
@@ -11314,6 +11314,8 @@ BACKUP_CHANNEL_ID = int(os.getenv("BACKUP_CHANNEL_ID", "1522813725206118460") or
 
 @tree.command(name="backup", description="Создать бэкап базы данных и загрузить в Discord")
 async def cmd_backup(interaction: discord.Interaction):
+    if not _has_punishment_access(interaction.user):
+        return await interaction.response.send_message("❌ Нет доступа.", ephemeral=True)
     await interaction.response.send_message("⏳ Создаю бэкап базы данных...", ephemeral=True)
     ch = interaction.guild.get_channel(BACKUP_CHANNEL_ID) if interaction.guild else None
     if not ch:
@@ -11343,6 +11345,8 @@ async def cmd_backup(interaction: discord.Interaction):
 
 @tree.command(name="backup_debug", description="Показать информацию о таблицах в базе данных")
 async def cmd_backup_debug(interaction: discord.Interaction):
+    if not _has_punishment_access(interaction.user):
+        return await interaction.response.send_message("❌ Нет доступа.", ephemeral=True)
     await interaction.response.send_message("⏳ Проверяю базу...", ephemeral=True)
     import psycopg2 as _pg2
     import psycopg2.extras as _pg2e
@@ -11371,6 +11375,8 @@ async def cmd_backup_debug(interaction: discord.Interaction):
 
 @tree.command(name="restore", description="Восстановить базу данных из последнего бэкапа в Discord")
 async def cmd_restore(interaction: discord.Interaction):
+    if not _has_punishment_access(interaction.user):
+        return await interaction.response.send_message("❌ Нет доступа.", ephemeral=True)
     ch = interaction.guild.get_channel(BACKUP_CHANNEL_ID) if interaction.guild else None
     if not ch:
         return await interaction.response.send_message("❌ Канал бэкапов не найден", ephemeral=True)
@@ -11449,6 +11455,8 @@ async def before_backup():
 # ── Google Drive Backup (опционально) ──
 @tree.command(name="gdrive_backup", description="Создать бэкап на Google Drive (если настроен)")
 async def cmd_gdrive_backup(interaction: discord.Interaction, keep: int = 7):
+    if not _has_punishment_access(interaction.user):
+        return await interaction.response.send_message("❌ Нет доступа.", ephemeral=True)
     if not gdrive_backup._get_service():
         return await interaction.response.send_message(
             "❌ Google Drive не настроен. Смотри `.env.example`",

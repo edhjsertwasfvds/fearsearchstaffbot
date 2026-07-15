@@ -236,6 +236,17 @@ def _init_table():
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_vdf_rechecks_status ON vdf_rechecks(status)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_vdf_rechecks_check_id ON vdf_rechecks(check_id)")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS app_logs (
+                    id SERIAL PRIMARY KEY,
+                    service VARCHAR(64),
+                    level VARCHAR(16),
+                    message TEXT,
+                    data JSONB,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_app_logs_created_at ON app_logs(created_at)")
             logger.info("[DB] Таблицы инициализированы")
     except Exception as e:
         logger.error(f"[DB] Ошибка создания таблиц: {e}")
