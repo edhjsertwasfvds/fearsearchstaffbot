@@ -16,6 +16,8 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
         .role-header { border-left: 3px solid; padding-left: 12px; }
+        .view-btn { transition: all 0.2s; }
+        .view-btn.active { background: rgba(88, 101, 242, 0.2); border-color: rgba(88, 101, 242, 0.5); color: #818cf8; }
     </style>
 </head>
 <body class="text-white min-h-screen w-full relative overflow-x-hidden">
@@ -34,6 +36,14 @@
                 <p id="totalText" class="text-gray-600 text-xs mt-1"></p>
             </div>
             <div class="flex items-center gap-3">
+                <div class="flex items-center gap-1 p-1 rounded-lg bg-white/5 border border-white/10">
+                    <button id="viewGrouped" class="view-btn active px-3 py-1.5 rounded-md text-xs font-medium border border-transparent">
+                        <i class="ph ph-users mr-1"></i>По ролям
+                    </button>
+                    <button id="viewTop" class="view-btn px-3 py-1.5 rounded-md text-xs font-medium text-gray-400 border border-transparent">
+                        <i class="ph ph-trophy mr-1"></i>Топ
+                    </button>
+                </div>
                 <a href="/" class="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-colors flex items-center gap-2">
                     <i class="ph ph-arrow-left"></i> Назад
                 </a>
@@ -57,6 +67,75 @@
             "\u041c\u043b. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#06b6d4"
         };
         function getRoleColor(role) { return ROLE_COLORS[role] || "#6b7280"; }
+
+        var ROLE_ORDER = ["\u0421\u0442\u0430\u0444\u0444", "\u0413\u043b. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440", "\u0421\u0442. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440", "\u0421\u0442. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043b. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440"];
+        var cachedData = null;
+        var currentView = "grouped";
+
+        function renderRow(s, idx) {
+            return '<div class="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors">'
+                + '<span class="text-gray-600 text-sm font-mono w-5 text-right">' + idx + ".</span>"
+                + '<div class="flex-1 min-w-0">'
+                + '<span class="text-white font-medium text-sm">' + esc(s.name || s.steamid) + "</span>"
+                + '<span class="text-gray-600 text-xs ml-2 font-mono">' + esc(s.steamid) + "</span>"
+                + (s.role_label ? '<span class="text-xs ml-2 px-1.5 py-0.5 rounded" style="background:' + getRoleColor(s.role_label) + '20;color:' + getRoleColor(s.role_label) + '">' + esc(s.role_label) + '</span>' : '')
+                + "</div>"
+                + '<div class="flex items-center gap-3 text-xs shrink-0">'
+                + '<span title="\u0411\u0430\u043d\u044b"><span class="text-gray-500">\uD83D\uDD28</span> <span class="text-amber-400 font-semibold">' + (s.bans||0) + "</span></span>"
+                + '<span title="\u041c\u0443\u0442\u044b"><span class="text-gray-500">\uD83D\uDD07</span> <span class="text-purple-400 font-semibold">' + (s.mutes||0) + "</span></span>"
+                + '<span title="\u0412\u0441\u0435\u0433\u043e"><span class="text-gray-500">\uD83D\uDCCA</span> <span class="text-white font-semibold">' + (s.total||0) + "</span></span>"
+                + '<span title="\u0421\u043d\u044f\u0442\u043e"><span class="text-gray-500">\u2702\uFE0F</span> <span class="text-gray-400 font-semibold">' + (s.removed||0) + "</span></span>"
+                + "</div></div>";
+        }
+
+        function renderGrouped(data) {
+            var content = document.getElementById("content");
+            content.innerHTML = "";
+            content.classList.remove("hidden");
+            var idx = 1;
+            var roleKeys = Object.keys(data.grouped);
+            roleKeys.sort(function(a,b) {
+                var ia = ROLE_ORDER.indexOf(a); if(ia<0) ia=99;
+                var ib = ROLE_ORDER.indexOf(b); if(ib<0) ib=99;
+                return ia - ib;
+            });
+            roleKeys.forEach(function(roleName) {
+                var members = data.grouped[roleName];
+                var color = getRoleColor(roleName);
+                var section = document.createElement("div");
+                var headerHtml = '<div class="role-header mb-3" style="border-color:' + color + '">'
+                    + '<h2 class="text-base font-bold" style="color:' + color + '">' + esc(roleName) + '</h2>'
+                    + '<span class="text-gray-600 text-xs">' + members.length + ' \u0447\u0435\u043b.</span></div>';
+                var listHtml = '<div class="space-y-1">';
+                members.forEach(function(s) {
+                    listHtml += renderRow(s, idx);
+                    idx++;
+                });
+                listHtml += "</div>";
+                section.innerHTML = headerHtml + listHtml;
+                content.appendChild(section);
+            });
+        }
+
+        function renderTop(data) {
+            var content = document.getElementById("content");
+            content.innerHTML = "";
+            content.classList.remove("hidden");
+            var all = (data.staff || []).slice().sort(function(a,b) { return (b.total||0) - (a.total||0); });
+            var listHtml = '<div class="space-y-1">';
+            all.forEach(function(s, i) {
+                listHtml += renderRow(s, i + 1);
+            });
+            listHtml += "</div>";
+            content.innerHTML = listHtml;
+        }
+
+        function render() {
+            if (!cachedData) return;
+            if (currentView === "grouped") renderGrouped(cachedData);
+            else renderTop(cachedData);
+        }
+
         function loadStats() {
             document.getElementById("loading").classList.remove("hidden");
             document.getElementById("empty").classList.add("hidden");
@@ -74,48 +153,25 @@
                 }
                 var totalCount = data.staff ? data.staff.length : 0;
                 document.getElementById("totalText").textContent = totalCount + " \u0447\u0435\u043b.";
-                var content = document.getElementById("content");
-                content.innerHTML = "";
-                content.classList.remove("hidden");
-                var idx = 1;
-                var ROLE_ORDER = ["\u0421\u0442\u0430\u0444\u0444", "\u0413\u043b. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440", "\u0421\u0442. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440", "\u0421\u0442. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043b. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440"];
-                var roleKeys = Object.keys(data.grouped);
-                roleKeys.sort(function(a,b) {
-                    var ia = ROLE_ORDER.indexOf(a); if(ia<0) ia=99;
-                    var ib = ROLE_ORDER.indexOf(b); if(ib<0) ib=99;
-                    return ia - ib;
-                });
-                roleKeys.forEach(function(roleName) {
-                    var members = data.grouped[roleName];
-                    var color = getRoleColor(roleName);
-                    var section = document.createElement("div");
-                    var headerHtml = '<div class="role-header mb-3" style="border-color:' + color + '">'
-                        + '<h2 class="text-base font-bold" style="color:' + color + '">' + esc(roleName) + '</h2>'
-                        + '<span class="text-gray-600 text-xs">' + members.length + ' \u0447\u0435\u043b.</span></div>';
-                    var listHtml = '<div class="space-y-1">';
-                    members.forEach(function(s) {
-                        listHtml += '<div class="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors">'
-                            + '<span class="text-gray-600 text-sm font-mono w-5 text-right">' + idx + ".</span>"
-                            + '<div class="flex-1 min-w-0">'
-                            + '<span class="text-white font-medium text-sm">' + esc(s.name || s.steamid) + "</span>"
-                            + '<span class="text-gray-600 text-xs ml-2 font-mono">' + esc(s.steamid) + "</span>"
-                            + "</div>"
-                            + '<div class="flex items-center gap-3 text-xs shrink-0">'
-                            + '<span title="\u0411\u0430\u043d\u044b"><span class="text-gray-500">\uD83D\uDD28</span> <span class="text-amber-400 font-semibold">' + (s.bans||0) + "</span></span>"
-                            + '<span title="\u041c\u0443\u0442\u044b"><span class="text-gray-500">\uD83D\uDD07</span> <span class="text-purple-400 font-semibold">' + (s.mutes||0) + "</span></span>"
-                            + '<span title="\u0412\u0441\u0435\u0433\u043e"><span class="text-gray-500">\uD83D\uDCCA</span> <span class="text-white font-semibold">' + (s.total||0) + "</span></span>"
-                            + '<span title="\u0421\u043d\u044f\u0442\u043e"><span class="text-gray-500">\u2702\uFE0F</span> <span class="text-gray-400 font-semibold">' + (s.removed||0) + "</span></span>"
-                            + "</div></div>";
-                        idx++;
-                    });
-                    listHtml += "</div>";
-                    section.innerHTML = headerHtml + listHtml;
-                    content.appendChild(section);
-                });
+                cachedData = data;
+                render();
             }).catch(function(err) {
                 document.getElementById("loading").textContent = "\u041e\u0448\u0438\u0431\u043a\u0430: " + err.message;
             });
         }
+
+        document.getElementById("viewGrouped").addEventListener("click", function() {
+            currentView = "grouped";
+            this.classList.add("active");
+            document.getElementById("viewTop").classList.remove("active");
+            render();
+        });
+        document.getElementById("viewTop").addEventListener("click", function() {
+            currentView = "top";
+            this.classList.add("active");
+            document.getElementById("viewGrouped").classList.remove("active");
+            render();
+        });
         document.getElementById("refreshBtn").addEventListener("click", loadStats);
         loadStats();
     </script>
