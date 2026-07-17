@@ -76,12 +76,23 @@
         var cachedData = null;
         var currentView = "grouped";
 
+        function copyToClipboard(text, el) {
+            navigator.clipboard.writeText(text).then(function() {
+                var orig = el.textContent;
+                el.textContent = "Скопировано!";
+                el.style.color = "#22c55e";
+                setTimeout(function() { el.textContent = orig; el.style.color = ""; }, 1000);
+            });
+        }
+
         function renderRow(s, idx) {
+            var steamUrl = "https://steamcommunity.com/profiles/" + s.steamid;
             return '<div class="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors">'
                 + '<span class="text-gray-600 text-sm font-mono w-5 text-right">' + idx + ".</span>"
                 + '<div class="flex-1 min-w-0">'
                 + '<span class="text-white font-medium text-sm">' + esc(s.name || s.steamid) + "</span>"
-                + '<span class="text-gray-600 text-xs ml-2 font-mono">' + esc(s.steamid) + "</span>"
+                + '<a href="' + steamUrl + '" target="_blank" class="text-gray-600 text-xs ml-2 font-mono hover:text-[#5865F2] transition-colors cursor-pointer" title="Открыть профиль Steam">' + esc(s.steamid) + ' <span class="text-[10px]">&#x1F517;</span></a>'
+                + '<span class="text-gray-700 text-xs ml-1 font-mono cursor-pointer hover:text-gray-400" onclick="copyToClipboard(\'' + s.steamid + '\', this)" title="Скопировать SteamID">&#x1F4CB;</span>'
                 + (s.role_label ? '<span class="text-xs ml-2 px-1.5 py-0.5 rounded" style="background:' + getRoleColor(s.role_label) + '20;color:' + getRoleColor(s.role_label) + '">' + esc(s.role_label) + '</span>' : '')
                 + "</div>"
                 + '<div class="flex items-center gap-3 text-xs shrink-0">'

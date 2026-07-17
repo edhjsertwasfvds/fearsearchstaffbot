@@ -10,7 +10,7 @@ const STAFF_STATS_STEAM_IDS = (process.env.STAFF_STATS_STEAM_IDS || '')
 const REFRESH_HOURS = Number(process.env.STAFF_PUNISHMENTS_REFRESH_HOURS || '1');
 const REFRESH_MS = REFRESH_HOURS * 60 * 60 * 1000;
 const PAGE_LIMIT = 100;
-const REQUEST_DELAY_MS = Number(process.env.STAFF_SYNC_REQUEST_DELAY_MS || '1500');
+const REQUEST_DELAY_MS = Number(process.env.STAFF_SYNC_REQUEST_DELAY_MS || '3000');
 const CONCURRENCY = 1;
 
 const STAFF_GROUP_IDS = new Set([1, 3, 5, 6]);
@@ -41,8 +41,11 @@ async function syncPunishmentsForStaff(steamid) {
         if (!data || !Array.isArray(data.punishments)) {
           break;
         }
-        const rows = data.punishments;
+        const rows = (data.punishments || []).filter(r => String(r.admin_steamid) === String(steamid));
         if (rows.length === 0) {
+          if (data.punishments && data.punishments.length > 0) {
+            logger.debug('All rows filtered out (admin_steamid mismatch)', { steamid, total: data.punishments.length });
+          }
           break;
         }
         const dbType = urlType;
@@ -67,7 +70,7 @@ async function syncPunishmentsForStaff(steamid) {
           error: error.message,
         });
         if (error.message && error.message.includes('429')) {
-          const backoff = Math.min(REQUEST_DELAY_MS * 4, 30000);
+          const backoff = Math.min(REQUEST_DELAY_MS * 8, 60000);
           logger.warn('429 hit during sync, backing off', { steamid, backoff });
           await sleep(backoff);
         }
