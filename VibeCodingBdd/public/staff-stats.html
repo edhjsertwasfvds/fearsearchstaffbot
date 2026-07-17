@@ -49,12 +49,12 @@
     <script>
         function esc(s) { return String(s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
         var ROLE_COLORS = {
+            "\u0421\u0442\u0430\u0444\u0444": "#eab308",
             "\u0413\u043b. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440": "#f43f5e",
             "\u0421\u0442. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440": "#fb923c",
             "\u0421\u0442. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#3b82f6",
-            "\u0421\u0442\u0430\u0444\u0444": "#eab308",
             "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#10b981",
-            "\u041c\u043b.\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#06b6d4"
+            "\u041c\u043b. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440": "#06b6d4"
         };
         function getRoleColor(role) { return ROLE_COLORS[role] || "#6b7280"; }
         function loadStats() {
@@ -78,7 +78,7 @@
                 content.innerHTML = "";
                 content.classList.remove("hidden");
                 var idx = 1;
-                var ROLE_ORDER = ["\u0421\u0442\u0430\u0444\u0444", "\u0421\u0442. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043b.\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u0413\u043b. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440", "\u0421\u0442. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440"];
+                var ROLE_ORDER = ["\u0421\u0442\u0430\u0444\u0444", "\u0413\u043b. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440", "\u0421\u0442. \u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440", "\u0421\u0442. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440", "\u041c\u043b. \u041c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440"];
                 var roleKeys = Object.keys(data.grouped);
                 roleKeys.sort(function(a,b) {
                     var ia = ROLE_ORDER.indexOf(a); if(ia<0) ia=99;

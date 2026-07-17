@@ -164,12 +164,12 @@ app.get("/api/staff-stats", async (req, res) => {
     const stats = await getStaffStatsForPeriod(monthStart, now);
 
     const ROLE_ORDER = {
-      "GLADMIN": 0, "Гл. Администратор": 0,
-      "STADMIN": 1, "Ст. Администратор": 1, "Ст. Админ": 1,
-      "STMODER": 2, "Ст. Модератор": 2, "Стафф": 2,
-      "STAFF": 2,
-      "MODER": 3, "Модератор": 3,
-      "MLMODER": 4, "Мл.Модератор": 4, "Мл. Модератор": 4,
+      "GLADMIN": 1, "Гл. Администратор": 1,
+      "STADMIN": 2, "Ст. Администратор": 2, "Ст. Админ": 2,
+      "STMODER": 3, "Ст. Модератор": 3,
+      "STAFF": 0, "Стафф": 0,
+      "MODER": 4, "Модератор": 4,
+      "MLMODER": 5, "Мл.Модератор": 5, "Мл. Модератор": 5,
     };
     const ROLE_LABELS = {
       "GLADMIN": "Гл. Администратор",
@@ -177,17 +177,20 @@ app.get("/api/staff-stats", async (req, res) => {
       "STMODER": "Ст. Модератор",
       "STAFF": "Стафф",
       "MODER": "Модератор",
-      "MLMODER": "Мл.Модератор",
+      "MLMODER": "Мл. Модератор",
     };
+    const EXCLUDED_ROLES = new Set(["admin", "admin+", "ADMIN", "ADMIN+"]);
 
     const staffMap = {};
     for (const row of stats) {
       const sid = row.admin_steamid;
+      const roleKey = row.role_key || "STAFF";
+      if (EXCLUDED_ROLES.has(roleKey)) continue;
       if (!staffMap[sid]) {
         staffMap[sid] = {
           steamid: sid,
           name: row.admin,
-          role_key: row.role_key || "STAFF",
+          role_key: roleKey,
           role: row.role || "Стафф",
           immunity: row.immunity || 0,
           bans: 0,
