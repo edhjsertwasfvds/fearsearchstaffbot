@@ -61,7 +61,7 @@ const DISCORD_ROLE_LABELS = {
   "1363567559122751640": "Администратор",
   "1438457934253396088": "Администратор +",
 };
-const MIN_DISCORD_ROLE_RANK = 6;
+const MIN_DISCORD_ROLE_RANK = 7;
 
 async function fetchDiscordMemberRoles(discordUserId) {
   if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN not configured");

@@ -694,7 +694,7 @@ const STAFF_ROLE_RANK = {
   "Администратор": 6, "Администратор +": 6,
   "Стафф": 5,
 };
-const MIN_SITE_ROLE_RANK = 6;
+const MIN_SITE_ROLE_RANK = 7;
 
 function getSiteRoleRank(groupName) {
   return STAFF_ROLE_RANK[groupName] ?? 0;
