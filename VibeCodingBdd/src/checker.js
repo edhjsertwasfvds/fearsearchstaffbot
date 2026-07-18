@@ -80,7 +80,12 @@ function fearAuthHeaders() {
         'Accept': 'application/json'
     };
     const token = process.env.FEAR_ACCESS_TOKEN || process.env.ACCESS_TOKEN || '';
-    if (token) h.Cookie = `access_token=${token}`;
+    if (token) {
+        h.Cookie = `access_token=${token}`;
+    } else {
+        const cookie = process.env.FEAR_COOKIE || '';
+        if (cookie) h.Cookie = cookie;
+    }
     return h;
 }
 
@@ -245,7 +250,7 @@ async function saveVdfHistory(results, filename, vdfText) {
     try {
         for (const r of results) {
             await pool.query(
-                `INSERT INTO vdf_history (source, steamid, nickname, fear_banned, fear_reason, fear_unban_time, vac_banned, vac_days_ago, game_bans, yooma_banned, yooma_reason, admin_group, filename, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())`,
+                `INSERT INTO vdf_history (source, steamid, nickname, fear_banned, fear_reason, fear_unban_time, vac_banned, vac_days_ago, game_bans, yooma_banned, yooma_reason, admin_group, filename, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,
                 ['site', r.steamid, r.nickname, r.fear_banned, r.fear_reason, r.fear_unban_ts, r.vac_banned, r.vac_days, r.game_bans,
                  Boolean(r.yooma_data?.found), (r.yooma_data?.punishments?.[0]?.reason || ''), r.admin_group, filename || '']
             );

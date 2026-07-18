@@ -30,6 +30,15 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        .role-header { border-left: 3px solid; padding-left: 12px; }
+        .view-btn { transition: all 0.2s; }
+        .view-btn.active { background: rgba(88, 101, 242, 0.2); border-color: rgba(88, 101, 242, 0.5); color: #818cf8; }
+        .period-btn { transition: all 0.15s; }
+        .period-btn.active { background: rgba(88, 101, 242, 0.2); color: #818cf8; border-color: rgba(88, 101, 242, 0.4); }
+        .period-btn:not(.active) { color: #9ca3af; }
+        .period-btn:hover:not(.active) { color: #e5e7eb; background: rgba(255,255,255,0.05); }
+        .skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     </style>
 </head>
 <body class="text-white min-h-screen w-full relative overflow-x-hidden selection:bg-[#5865F2] selection:text-white">
@@ -38,7 +47,7 @@
         <div class="absolute -top-[300px] left-[10%] w-[500px] h-[500px] bg-[#5865F2] rounded-full blur-[150px] opacity-[0.05]"></div>
     </div>
 
-    <div class="relative z-10 max-w-[1400px] mx-auto px-4 py-5">
+    <div class="relative z-10 max-w-[1800px] mx-auto px-4 py-5">
         <div class="flex items-center justify-between mb-5">
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-lg bg-[#5865F2]/20 flex items-center justify-center">
@@ -47,9 +56,6 @@
                 <h1 class="text-lg font-bold">Fear Staff Sync</h1>
             </div>
             <div class="flex items-center gap-2">
-                <a href="/staff-stats" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs font-medium transition-colors flex items-center gap-1.5">
-                    <i class="ph ph-chart-bar"></i> Статистика
-                </a>
                 <a href="/checker/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs font-medium transition-colors flex items-center gap-1.5">
                     <i class="ph ph-shield-check"></i> Checker
                 </a>
@@ -74,12 +80,23 @@
                 <i class="ph ph-users"></i> Все админы
                 <span id="allCount" class="text-gray-500 font-normal text-xs"></span>
             </button>
+            <button class="tab-btn py-2.5 text-sm font-semibold text-gray-400 flex items-center gap-2" data-tab="stats">
+                <i class="ph ph-chart-bar"></i> Статистика
+            </button>
+            <button class="tab-btn py-2.5 text-sm font-semibold text-gray-400 flex items-center gap-2" data-tab="logs">
+                <i class="ph ph-scroll"></i> Логи
+            </button>
         </div>
 
         <!-- Tab: Online — cards -->
         <div id="tab-online" class="tab-content active">
             <div id="onlineGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                <div class="col-span-full text-center py-8 text-gray-500 text-sm">Загрузка...</div>
+                <div class="col-span-full grid grid-cols-4 gap-3">
+                    <div class="skeleton h-[140px]"></div>
+                    <div class="skeleton h-[140px]"></div>
+                    <div class="skeleton h-[140px]"></div>
+                    <div class="skeleton h-[140px]"></div>
+                </div>
             </div>
         </div>
 
@@ -93,7 +110,6 @@
                     <span id="status" class="text-sm text-gray-500 whitespace-nowrap"></span>
                 </div>
             </div>
-
             <div class="overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03]">
                 <table class="w-full text-left text-sm">
                     <thead class="bg-white/5 text-gray-400 sticky top-0">
@@ -116,13 +132,61 @@
                     <tbody id="rows"></tbody>
                 </table>
             </div>
-
             <div class="mt-3 text-center">
                 <span id="pagination" class="text-xs text-gray-500"></span>
             </div>
         </div>
+
+        <!-- Tab: Stats -->
+        <div id="tab-stats" class="tab-content">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <p id="periodLabel" class="text-gray-500 text-xs"></p>
+                    <p id="totalText" class="text-gray-600 text-xs mt-0.5"></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-1.5 mb-4 flex-wrap">
+                <button class="period-btn active px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="this-month">Этот месяц</button>
+                <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="last-month">Прошлый месяц</button>
+                <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="this-week">Эта неделя (Пн–Вс)</button>
+                <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="last-week">Прошлая неделя</button>
+                <button class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10" data-period="all">Все время</button>
+            </div>
+            <div class="flex items-center gap-2 mb-4">
+                <div class="flex items-center gap-1 p-1 rounded-lg bg-white/5 border border-white/10">
+                    <button id="viewGrouped" class="view-btn active px-3 py-1.5 rounded-md text-xs font-medium border border-transparent">
+                        <i class="ph ph-users mr-1"></i>По ролям
+                    </button>
+                    <button id="viewTop" class="view-btn px-3 py-1.5 rounded-md text-xs font-medium text-gray-400 border border-transparent">
+                        <i class="ph ph-trophy mr-1"></i>Топ
+                    </button>
+                </div>
+            </div>
+            <div id="statsLoading" class="space-y-3">
+                <div class="skeleton h-[60px]"></div>
+                <div class="skeleton h-[60px]"></div>
+                <div class="skeleton h-[60px]"></div>
+                <div class="skeleton h-[60px]"></div>
+            </div>
+            <div id="statsContent" class="hidden space-y-6"></div>
+            <div id="statsEmpty" class="hidden text-center text-gray-500 py-12">Нет данных за этот период</div>
+        </div>
+
+        <!-- Tab: Logs -->
+        <div id="tab-logs" class="tab-content">
+            <div class="mb-3 flex items-center gap-2">
+                <div class="relative flex-1 max-w-xs">
+                    <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm"></i>
+                    <input id="logsSearch" type="text" placeholder="Поиск по админу, игроку, причине..." class="w-full pl-9 pr-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#5865F2]/50">
+                </div>
+                <button id="logsSearchBtn" class="px-3 py-2 rounded-lg bg-[#5865F2] hover:bg-[#4752C4] text-xs font-semibold transition-colors">Найти</button>
+                <span id="logsCount" class="text-gray-600 text-xs"></span>
+            </div>
+            <div id="logsContent" class="space-y-0.5"></div>
+            <div id="logsPaging" class="flex items-center justify-center gap-2 mt-4"></div>
+        </div>
     </div>
 
-    <script src="/app.js?v=6"></script>
+    <script src="/app.js?v=7"></script>
 </body>
 </html>

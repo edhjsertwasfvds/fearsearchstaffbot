@@ -10,7 +10,6 @@ var searchInput = document.getElementById("searchInput");
 var onlineGridEl = document.getElementById("onlineGrid");
 var onlineCountEl = document.getElementById("onlineCount");
 var allCountEl = document.getElementById("allCount");
-var onlineStatusEl = document.getElementById("onlineStatus");
 
 var PAGE_SIZE = 50;
 var currentPage = 0;
@@ -179,7 +178,6 @@ function renderOnlineCard(p) {
 
 async function loadOnlineAdmins() {
   try {
-    if (onlineStatusEl) onlineStatusEl.textContent = "Загрузка...";
     var res = await fetch("/api/servers");
     var data = await res.json();
     var servers = data.servers || [];
@@ -199,7 +197,6 @@ async function loadOnlineAdmins() {
     });
 
     if (onlineCountEl) onlineCountEl.textContent = "(" + unique.length + ")";
-    if (onlineStatusEl) onlineStatusEl.textContent = "";
 
     if (unique.length === 0) {
       onlineGridEl.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500 text-sm">Никого нет онлайн</div>';
@@ -236,7 +233,7 @@ function renderRow(row) {
   var links = '<div class="flex items-center gap-1.5">'
     + '<a href="' + fearProfile + '" target="_blank" title="Fear Profile" class="p-1 rounded hover:bg-white/10 transition-colors"><i class="ph ph-user text-gray-400 hover:text-white text-sm"></i></a>'
     + '<a href="' + steamProfile + '" target="_blank" title="Steam Profile" class="p-1 rounded hover:bg-white/10 transition-colors"><i class="ph ph-steam-logo text-gray-400 hover:text-white text-sm"></i></a>'
-    + '<button onclick="copyToClipboard(\'' + steamid + '\', this)" title="SteamID" class="p-1 rounded hover:bg-white/10 transition-colors"><i class="ph ph-copy text-gray-400 hover:text-white text-sm"></i></button>'
+    + '<button onclick="copyToClipboard(\'' + steamid + '\', this)" title="SteamID" class="p-1 rounded hover:bg-white/10 transition-colors"><i class="ph ph-copy text-gray-400 hover:text-white text-sm"></i></a>'
     + "</div>";
 
   var tr = document.createElement("tr");
@@ -315,7 +312,245 @@ if (searchInput) {
   });
 }
 
-// Tabs
+// ===================== STATS TAB =====================
+var ROLE_COLORS = {
+  "Владелец": "#ff3c3c", "Куратор": "#ff8c00", "Разработчик": "#3a84c8",
+  "Гл. Администратор": "#f95dff", "Ст. Администратор": "#22c7aa",
+  "Спец. Администратор": "#d39ae1", "Ст. Модератор": "#8c56f0", "Ст. Модер": "#8c56f0",
+  "Модератор": "#e75288", "Мл. Модератор": "#e2bb6d",
+  "Модератор Discord": "#bd458c", "Модератор месяца": "#da5f23",
+  "Администратор": "#ebc04e", "Администратор +": "#ffcc00", "Стафф": "#eab308"
+};
+function getRoleColor(role) { return ROLE_COLORS[role] || "#6b7280"; }
+
+var cachedStatsData = null;
+var currentStatsView = "grouped";
+var currentPeriod = "this-month";
+
+function getPeriodParams(period) {
+  var now = new Date();
+  var from, to;
+  switch(period) {
+    case "this-month":
+      from = new Date(now.getFullYear(), now.getMonth(), 1); to = now; break;
+    case "last-month":
+      from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      to = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59); break;
+    case "this-week": {
+      var day = now.getDay(); var diff = day === 0 ? 6 : day - 1;
+      from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+      from.setHours(0, 0, 0, 0); to = now; break;
+    }
+    case "last-week": {
+      var day2 = now.getDay(); var diff2 = day2 === 0 ? 6 : day2 - 1;
+      from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff2 - 7);
+      from.setHours(0, 0, 0, 0);
+      to = new Date(from.getTime() + 7 * 86400000 - 1); break;
+    }
+    case "all": from = new Date(2020, 0, 1); to = now; break;
+    default: from = new Date(now.getFullYear(), now.getMonth(), 1); to = now;
+  }
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
+function formatPeriodLabel(period) {
+  var p = getPeriodParams(period);
+  return new Date(p.from).toLocaleDateString("ru-RU") + " — " + new Date(p.to).toLocaleDateString("ru-RU");
+}
+
+function renderStatsRow(s, idx) {
+  var fearUrl = "https://fearproject.ru/profile/" + s.steamid;
+  var bansUrl = "https://davidonchik.online/admin/" + s.steamid + "?type=1";
+  var mutesUrl = "https://davidonchik.online/admin/" + s.steamid + "?type=2";
+  var color = getRoleColor(s.role_label);
+  return '<div class="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors">'
+    + '<span class="text-gray-600 text-sm font-mono w-5 text-right">' + idx + ".</span>"
+    + '<div class="flex-1 min-w-0">'
+    + '<span class="text-white font-medium text-sm">' + esc(s.name || s.steamid) + "</span>"
+    + '<a href="' + fearUrl + '" target="_blank" class="text-gray-500 text-xs ml-2 font-mono hover:text-[#5865F2] transition-colors" title="Профиль Fear">' + esc(s.steamid) + ' <i class="ph ph-link-simple text-[10px]"></i></a>'
+    + '<span class="text-gray-700 text-xs ml-1 font-mono cursor-pointer hover:text-gray-400" onclick="copyToClipboard(\'' + s.steamid + '\', this)" title="Скопировать SteamID"><i class="ph ph-copy text-[11px]"></i></span>'
+    + (s.role_label ? '<span class="text-xs ml-2 px-1.5 py-0.5 rounded" style="background:' + color + '20;color:' + color + '">' + esc(s.role_label) + '</span>' : '')
+    + "</div>"
+    + '<div class="flex items-center gap-3 text-xs shrink-0">'
+    + '<a href="' + bansUrl + '" target="_blank" title="Баны на davidonchik.online" class="hover:opacity-80 transition-opacity"><span class="text-gray-500"><i class="ph ph-hammer"></i></span> <span class="text-amber-400 font-semibold">' + (s.bans||0) + "</span></a>"
+    + '<a href="' + mutesUrl + '" target="_blank" title="Муты на davidonchik.online" class="hover:opacity-80 transition-opacity"><span class="text-gray-500"><i class="ph ph-megaphone"></i></span> <span class="text-purple-400 font-semibold">' + (s.mutes||0) + "</span></a>"
+    + '<span title="Всего"><span class="text-gray-500"><i class="ph ph-chart-line"></i></span> <span class="text-white font-semibold">' + (s.total||0) + "</span></span>"
+    + '<span title="Снято"><span class="text-gray-500"><i class="ph ph-scissors"></i></span> <span class="text-gray-400 font-semibold">' + (s.removed||0) + "</span></span>"
+    + "</div></div>";
+}
+
+function renderStatsGrouped(data) {
+  var el = document.getElementById("statsContent");
+  el.innerHTML = "";
+  el.classList.remove("hidden");
+
+  var groups = {};
+  (data.staff || []).forEach(function(s) {
+    var key = s.role_label || "Стафф";
+    if (!groups[key]) groups[key] = { label: key, role_order: s.role_order || 99, members: [] };
+    groups[key].members.push(s);
+  });
+
+  var sorted = Object.values(groups).sort(function(a, b) { return a.role_order - b.role_order; });
+  var idx = 1;
+  sorted.forEach(function(g) {
+    var color = getRoleColor(g.label);
+    var section = document.createElement("div");
+    var headerHtml = '<div class="role-header mb-3" style="border-color:' + color + '">'
+      + '<h2 class="text-base font-bold" style="color:' + color + '">' + esc(g.label) + '</h2>'
+      + '<span class="text-gray-600 text-xs">' + g.members.length + ' чел.</span></div>';
+    var listHtml = '<div class="space-y-1">';
+    g.members.forEach(function(s) {
+      listHtml += renderStatsRow(s, idx);
+      idx++;
+    });
+    listHtml += "</div>";
+    section.innerHTML = headerHtml + listHtml;
+    el.appendChild(section);
+  });
+}
+
+function renderStatsTop(data) {
+  var el = document.getElementById("statsContent");
+  el.innerHTML = "";
+  el.classList.remove("hidden");
+  var all = (data.staff || []).slice().sort(function(a,b) { return (b.total||0) - (a.total||0); });
+  var listHtml = '<div class="space-y-1">';
+  all.forEach(function(s, i) { listHtml += renderStatsRow(s, i + 1); });
+  listHtml += "</div>";
+  el.innerHTML = listHtml;
+}
+
+function renderStats() {
+  if (!cachedStatsData) return;
+  if (currentStatsView === "grouped") renderStatsGrouped(cachedStatsData);
+  else if (currentStatsView === "top") renderStatsTop(cachedStatsData);
+}
+
+function loadStats() {
+  var loading = document.getElementById("statsLoading");
+  var content = document.getElementById("statsContent");
+  var empty = document.getElementById("statsEmpty");
+  loading.classList.remove("hidden");
+  content.classList.add("hidden");
+  empty.classList.add("hidden");
+  var params = getPeriodParams(currentPeriod);
+  var url = "/api/staff-stats?from=" + encodeURIComponent(params.from) + "&to=" + encodeURIComponent(params.to);
+  document.getElementById("periodLabel").textContent = formatPeriodLabel(currentPeriod);
+  fetch(url).then(function(r){return r.json()}).then(function(data) {
+    loading.classList.add("hidden");
+    if (!data.grouped || Object.keys(data.grouped).length === 0) {
+      empty.classList.remove("hidden");
+      return;
+    }
+    document.getElementById("totalText").textContent = (data.staff ? data.staff.length : 0) + " чел.";
+    cachedStatsData = data;
+    renderStats();
+  }).catch(function(err) {
+    loading.classList.add("hidden");
+    empty.textContent = "Ошибка: " + err.message;
+    empty.classList.remove("hidden");
+  });
+}
+
+// ===================== LOGS TAB =====================
+var logsPage = 0;
+var logsPageSize = 50;
+var logsSearchQuery = "";
+
+function fmtStatus(s) {
+  if (s === 1) return '<span class="text-emerald-400">Активен</span>';
+  if (s === 2) return '<span class="text-gray-500">Снят</span>';
+  if (s === 4) return '<span class="text-yellow-400">Истёк</span>';
+  return '<span class="text-gray-600">' + s + '</span>';
+}
+function fmtType(t) {
+  if (t === 1) return '<span class="text-amber-400"><i class="ph ph-hammer"></i> Бан</span>';
+  if (t === 2) return '<span class="text-purple-400"><i class="ph ph-megaphone"></i> Мут</span>';
+  return '<span class="text-gray-500">Тип ' + t + '</span>';
+}
+function fmtDur(sec) {
+  if (!sec || sec <= 0) return "Навсегда";
+  var d = Math.floor(sec / 86400);
+  var h = Math.floor((sec % 86400) / 3600);
+  if (d > 0) return d + "д " + h + "ч";
+  var m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return h + "ч " + m + "м";
+  return m + "м";
+}
+function fmtTs(ts) {
+  if (!ts) return "—";
+  var d = new Date(ts * 1000);
+  return d.toLocaleDateString("ru-RU") + " " + d.toLocaleTimeString("ru-RU", {hour:"2-digit", minute:"2-digit"});
+}
+
+function renderLogRow(r) {
+  var typeIcon = fmtType(r.type);
+  var statusStr = fmtStatus(r.status);
+  var fearUrl = "https://fearproject.ru/profile/" + r.steamid;
+  return '<div class="flex items-center gap-3 px-4 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-xs">'
+    + '<span class="shrink-0 w-[130px] text-gray-500 font-mono">' + fmtTs(r.created) + '</span>'
+    + '<span class="shrink-0 w-[60px]">' + typeIcon + '</span>'
+    + '<div class="flex-1 min-w-0 flex items-center gap-1">'
+    + '<span class="text-[#5865F2] font-medium cursor-pointer hover:underline shrink-0" onclick="copyToClipboard(\'' + esc(r.admin_steamid) + '\', this)">' + esc(r.admin) + '</span>'
+    + ' <i class="ph ph-arrow-right text-gray-600 shrink-0"></i> '
+    + '<a href="' + fearUrl + '" target="_blank" class="text-white hover:text-[#5865F2] transition-colors shrink-0">' + esc(r.name || r.steamid) + '</a>'
+    + '<span class="text-gray-600 font-mono ml-1 shrink-0">(' + esc(r.steamid) + ')</span>'
+    + '</div>'
+    + '<span class="shrink-0 w-[140px] text-gray-400" title="' + esc(r.reason) + '">' + esc(r.reason || '—') + '</span>'
+    + '<span class="shrink-0 w-[80px] text-gray-500">' + fmtDur(r.duration) + '</span>'
+    + '<span class="shrink-0 w-[70px] text-right">' + statusStr + '</span>'
+    + '</div>';
+}
+
+function loadLogs(page) {
+  logsPage = page || 0;
+  var lc = document.getElementById("logsContent");
+  lc.innerHTML = '<div class="space-y-0.5"><div class="skeleton h-[36px]"></div><div class="skeleton h-[36px]"></div><div class="skeleton h-[36px]"></div><div class="skeleton h-[36px]"></div><div class="skeleton h-[36px]"></div></div>';
+  document.getElementById("logsCount").textContent = "";
+  document.getElementById("logsPaging").innerHTML = "";
+  var offset = logsPage * logsPageSize;
+  var url = "/api/punishments/logs?limit=" + logsPageSize + "&offset=" + offset;
+  if (logsSearchQuery) url += "&search=" + encodeURIComponent(logsSearchQuery);
+  fetch(url).then(function(r){return r.json()}).then(function(data) {
+    lc.innerHTML = "";
+    if (!data.rows || data.rows.length === 0) {
+      lc.innerHTML = '<div class="text-center text-gray-500 py-8">Нет записей</div>';
+      document.getElementById("logsCount").textContent = "";
+      document.getElementById("logsPaging").innerHTML = "";
+      return;
+    }
+    document.getElementById("logsCount").textContent = "Найдено: " + data.total;
+    data.rows.forEach(function(r) { lc.innerHTML += renderLogRow(r); });
+    var totalPages = Math.ceil(data.total / logsPageSize);
+    var paging = document.getElementById("logsPaging");
+    paging.innerHTML = "";
+    if (totalPages <= 1) return;
+    if (logsPage > 0) {
+      var prevBtn = document.createElement("button");
+      prevBtn.textContent = "← Назад";
+      prevBtn.className = "px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-400 transition-colors";
+      prevBtn.onclick = function() { loadLogs(logsPage - 1); };
+      paging.appendChild(prevBtn);
+    }
+    var info = document.createElement("span");
+    info.className = "text-gray-600 text-xs";
+    info.textContent = (logsPage + 1) + " / " + totalPages;
+    paging.appendChild(info);
+    if (logsPage < totalPages - 1) {
+      var nextBtn = document.createElement("button");
+      nextBtn.textContent = "Далее →";
+      nextBtn.className = "px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-gray-400 transition-colors";
+      nextBtn.onclick = function() { loadLogs(logsPage + 1); };
+      paging.appendChild(nextBtn);
+    }
+  }).catch(function(err) {
+    lc.innerHTML = '<div class="text-center text-red-400 py-8">Ошибка: ' + esc(err.message) + '</div>';
+  });
+}
+
+// ===================== TABS =====================
+var statsLoaded = false;
 document.querySelectorAll(".tab-btn").forEach(function(btn) {
   btn.addEventListener("click", function() {
     document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.remove("active"); });
@@ -327,8 +562,60 @@ document.querySelectorAll(".tab-btn").forEach(function(btn) {
       adminsLoaded = true;
       loadPage(true);
     }
+    if (btn.dataset.tab === "stats" && !statsLoaded) {
+      statsLoaded = true;
+      loadStats();
+    }
+    if (btn.dataset.tab === "logs") {
+      loadLogs(0);
+    }
   });
 });
+
+// Stats controls
+document.querySelectorAll(".period-btn").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".period-btn").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    currentPeriod = btn.dataset.period;
+    loadStats();
+  });
+});
+
+var viewGroupedBtn = document.getElementById("viewGrouped");
+var viewTopBtn = document.getElementById("viewTop");
+if (viewGroupedBtn) {
+  viewGroupedBtn.addEventListener("click", function() {
+    currentStatsView = "grouped"; this.classList.add("active");
+    if (viewTopBtn) viewTopBtn.classList.remove("active");
+    renderStats();
+  });
+}
+if (viewTopBtn) {
+  viewTopBtn.addEventListener("click", function() {
+    currentStatsView = "top"; this.classList.add("active");
+    if (viewGroupedBtn) viewGroupedBtn.classList.remove("active");
+    renderStats();
+  });
+}
+
+// Logs search
+var logsSearchBtn = document.getElementById("logsSearchBtn");
+var logsSearchInput = document.getElementById("logsSearch");
+if (logsSearchBtn) {
+  logsSearchBtn.addEventListener("click", function() {
+    logsSearchQuery = logsSearchInput.value.trim();
+    loadLogs(0);
+  });
+}
+if (logsSearchInput) {
+  logsSearchInput.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+      logsSearchQuery = this.value.trim();
+      loadLogs(0);
+    }
+  });
+}
 
 // Refresh
 if (refreshBtn) {
