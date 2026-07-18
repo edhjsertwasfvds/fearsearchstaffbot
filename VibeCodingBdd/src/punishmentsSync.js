@@ -13,17 +13,15 @@ const PAGE_LIMIT = 100;
 const REQUEST_DELAY_MS = Number(process.env.STAFF_SYNC_REQUEST_DELAY_MS || '8000');
 const CONCURRENCY = 1;
 
-const STAFF_GROUP_IDS = new Set([1, 3, 5, 6]);
+const EXCLUDED_ROLE_KEYS = new Set(['admin', 'admin+', 'ADMIN', 'ADMIN+', 'UNDEFINED']);
 
 function isStaffAdmin(admin) {
-  const gid = Number(admin?.group_id);
-  if (Number.isFinite(gid) && STAFF_GROUP_IDS.has(gid)) return true;
-  // Fallback: display name / group name (legacy)
   const groupDisplay = String(admin?.group_display_name || '').trim();
   const groupName = String(admin?.group_name || '').trim().toUpperCase();
-  const allowedDisplay = new Set(['Стафф', 'Стаф', 'Ст. Модер', 'Модератор', 'Мл. Модератор']);
-  const allowedName = new Set(['STAFF', 'STMODER', 'MODER', 'MLMODER']);
-  return allowedDisplay.has(groupDisplay) || allowedName.has(groupName);
+  if (EXCLUDED_ROLE_KEYS.has(groupName)) return false;
+  if (EXCLUDED_ROLE_KEYS.has(groupDisplay)) return false;
+  if (!groupDisplay && !groupName) return false;
+  return true;
 }
 
 function sleep(ms) {
