@@ -32,32 +32,34 @@ function sleep(ms) {
 
 async function syncPunishmentsForStaff(steamid) {
   logger.info('Syncing punishments for staff', { steamid });
-  for (const urlType of [1, 2]) {
+    for (const urlType of [1, 2]) {
     let page = 1;
     let totalRows = 0;
     while (true) {
       try {
         const data = await fetchStaffPunishments(steamid, urlType, page, PAGE_LIMIT);
-        if (!data || !Array.isArray(data.punishments)) {
+        if (!data || !Array.isArray(data.punishments) || data.punishments.length === 0) {
           break;
         }
         const rows = (data.punishments || []).filter(r => String(r.admin_steamid) === String(steamid));
-        if (rows.length === 0) {
-          if (data.punishments && data.punishments.length > 0) {
-            logger.debug('All rows filtered out (admin_steamid mismatch)', { steamid, total: data.punishments.length });
-          }
-          break;
+        if (rows.length > 0) {
+          await upsertPunishments(urlType, rows);
+          totalRows += rows.length;
+          logger.debug('Upserted punishments page', {
+            steamid,
+            type: urlType,
+            page,
+            count: rows.length,
+          });
+        } else {
+          logger.debug('No admin rows on this page', {
+            steamid,
+            type: urlType,
+            page,
+            totalOnPage: data.punishments.length,
+          });
         }
-        const dbType = urlType;
-        await upsertPunishments(dbType, rows);
-        totalRows += rows.length;
-        logger.debug('Upserted punishments page', {
-          steamid,
-          type: dbType,
-          page,
-          count: rows.length,
-        });
-        if (rows.length < PAGE_LIMIT) {
+        if (data.punishments.length < PAGE_LIMIT) {
           break;
         }
         page++;
