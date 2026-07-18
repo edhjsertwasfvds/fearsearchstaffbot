@@ -174,6 +174,15 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hidden_staff (
+      id SERIAL PRIMARY KEY,
+      steamid TEXT NOT NULL UNIQUE,
+      hidden_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 async function createRefreshRun() {
@@ -796,6 +805,19 @@ async function updateSiteUserRole(userId, role) {
   await pool.query(`UPDATE site_users SET role = $2 WHERE id = $1`, [userId, role]);
 }
 
+async function getHiddenStaff() {
+  const result = await pool.query(`SELECT steamid, hidden_by, created_at FROM hidden_staff ORDER BY created_at DESC`);
+  return result.rows;
+}
+
+async function addHiddenStaff(steamid, hiddenBy) {
+  await pool.query(`INSERT INTO hidden_staff (steamid, hidden_by) VALUES ($1, $2) ON CONFLICT (steamid) DO NOTHING`, [steamid, hiddenBy]);
+}
+
+async function removeHiddenStaff(steamid) {
+  await pool.query(`DELETE FROM hidden_staff WHERE steamid = $1`, [steamid]);
+}
+
 async function getStaffStatsForPeriod(dateFrom, dateTo) {
   let dateWhere = "";
   const params = [];
@@ -820,6 +842,7 @@ async function getStaffStatsForPeriod(dateFrom, dateTo) {
     FROM punishments p
     LEFT JOIN admins a ON a.steamid = p.admin_steamid
     WHERE p.admin_steamid IS NOT NULL AND p.admin_steamid != ''
+    AND p.admin_steamid NOT IN (SELECT steamid FROM hidden_staff)
     ${dateWhere}
     GROUP BY p.admin_steamid, p.admin, a.group_display_name, a.group_name, a.immunity, p.type, p.status
   `, params);
@@ -855,5 +878,8 @@ module.exports = {
   STAFF_ROLE_RANK,
   MIN_SITE_ROLE_RANK,
   getPunishmentLogs,
-  getPunishmentLogsCount
+  getPunishmentLogsCount,
+  getHiddenStaff,
+  addHiddenStaff,
+  removeHiddenStaff
 };

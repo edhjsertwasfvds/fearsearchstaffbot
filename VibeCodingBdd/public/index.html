@@ -42,7 +42,7 @@
         @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
         .scroll-panel { overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; }
         .header-fixed { flex-shrink: 0; }
-        .stats-toolbar { flex-shrink: 0; }
+        .stat-card { background: rgba(22, 22, 26, 0.8); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 10px 16px; }
     </style>
 </head>
 <body class="text-white w-full relative overflow-hidden selection:bg-[#5865F2] selection:text-white">
@@ -51,16 +51,46 @@
         <div class="absolute -top-[300px] left-[10%] w-[500px] h-[500px] bg-[#5865F2] rounded-full blur-[150px] opacity-[0.05]"></div>
     </div>
 
-    <div class="relative z-10 h-full flex flex-col max-w-[1800px] mx-auto px-4 pt-5 pb-2">
-        <!-- Header -->
-        <div class="header-fixed flex items-center justify-between mb-4 shrink-0">
+    <div class="relative z-10 h-full flex flex-col max-w-[1800px] mx-auto px-4 pt-4 pb-2">
+        <!-- Top bar: info left + title center + profile right -->
+        <div class="header-fixed flex items-center justify-between mb-3 shrink-0">
+            <!-- Left: Stats info -->
             <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-lg bg-[#5865F2]/20 flex items-center justify-center">
-                    <i class="ph ph-shield-check text-[#5865F2] text-lg"></i>
+                <div class="stat-card flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <i class="ph ph-users text-emerald-400"></i>
+                        <div>
+                            <div class="text-[10px] text-gray-500 leading-none">Админов</div>
+                            <div id="statAdmins" class="text-sm font-bold leading-none mt-0.5">—</div>
+                        </div>
+                    </div>
+                    <div class="w-px h-6 bg-white/10"></div>
+                    <div class="flex items-center gap-2">
+                        <i class="ph ph-game-controller text-blue-400"></i>
+                        <div>
+                            <div class="text-[10px] text-gray-500 leading-none">Игроков</div>
+                            <div id="statPlayers" class="text-sm font-bold leading-none mt-0.5">—</div>
+                        </div>
+                    </div>
+                    <div class="w-px h-6 bg-white/10"></div>
+                    <div class="flex items-center gap-2">
+                        <i class="ph ph-flag text-amber-400"></i>
+                        <div>
+                            <div class="text-[10px] text-gray-500 leading-none">Репортов</div>
+                            <div id="statReports" class="text-sm font-bold leading-none mt-0.5">—</div>
+                        </div>
+                    </div>
                 </div>
-                <h1 class="text-lg font-bold">Fear Staff Sync</h1>
             </div>
-            <div class="flex items-center gap-2">
+
+            <!-- Center: Title + nav -->
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-[#5865F2]/20 flex items-center justify-center">
+                        <i class="ph ph-shield-check text-[#5865F2]"></i>
+                    </div>
+                    <span class="text-base font-bold">Fear Staff Sync</span>
+                </div>
                 <a href="/checker/" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs font-medium transition-colors flex items-center gap-1.5">
                     <i class="ph ph-shield-check"></i> Checker
                 </a>
@@ -70,7 +100,19 @@
                 <button id="refreshBtn" class="px-3 py-1.5 rounded-lg bg-[#5865F2] hover:bg-[#4752C4] text-xs font-semibold transition-colors flex items-center gap-1.5">
                     <i class="ph ph-arrows-clockwise"></i> Обновить
                 </button>
-                <button id="logoutBtn" class="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-xs text-gray-400 hover:text-white transition-colors">
+            </div>
+
+            <!-- Right: Profile -->
+            <div class="stat-card flex items-center gap-3">
+                <img id="profileAvatar" src="" alt="" class="w-9 h-9 rounded-full object-cover hidden">
+                <div id="profilePlaceholder" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center hidden">
+                    <i class="ph ph-user text-gray-500"></i>
+                </div>
+                <div class="text-right">
+                    <div id="profileName" class="text-sm font-semibold leading-none"></div>
+                    <div id="profileRole" class="text-[10px] text-gray-500 leading-none mt-1"></div>
+                </div>
+                <button id="logoutBtn" class="ml-1 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/8 text-[10px] text-gray-500 hover:text-red-400 transition-colors" title="Выйти">
                     <i class="ph ph-sign-out"></i>
                 </button>
             </div>
@@ -147,7 +189,7 @@
 
         <!-- Tab: Stats -->
         <div id="tab-stats" class="tab-content">
-            <div class="stats-toolbar mb-3 shrink-0">
+            <div id="statsToolbar" class="stats-toolbar mb-3 shrink-0">
                 <div class="flex items-center justify-between mb-2">
                     <div>
                         <p id="periodLabel" class="text-gray-500 text-xs"></p>
@@ -203,6 +245,6 @@
         </div>
     </div>
 
-    <script src="/app.js?v=8"></script>
+    <script src="/app.js?v=9"></script>
 </body>
 </html>

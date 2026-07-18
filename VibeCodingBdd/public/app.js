@@ -1,6 +1,48 @@
+var currentUser = null;
 fetch("/api/auth/me").then(function(r) {
-  if (r.status === 401) window.location.href = "/login";
+  if (r.status === 401) { window.location.href = "/login"; return; }
+  return r.json();
+}).then(function(data) {
+  if (data && data.user) {
+    currentUser = data.user;
+    loadProfile(data.user);
+  }
 }).catch(function() {});
+
+function loadProfile(user) {
+  var pName = document.getElementById("profileName");
+  var pRole = document.getElementById("profileRole");
+  var pAvatar = document.getElementById("profileAvatar");
+  var pPlaceholder = document.getElementById("profilePlaceholder");
+  if (pName) pName.textContent = user.discord_display || user.username || "";
+  if (pRole) pRole.textContent = user.discord_role || user.role || "";
+  if (user.discord_avatar) {
+    if (pAvatar) { pAvatar.src = user.discord_avatar; pAvatar.classList.remove("hidden"); }
+    if (pPlaceholder) pPlaceholder.classList.add("hidden");
+  } else {
+    if (pPlaceholder) pPlaceholder.classList.remove("hidden");
+    if (pAvatar) pAvatar.classList.add("hidden");
+  }
+}
+
+function loadDashboardStats() {
+  fetch("/api/servers").then(function(r){return r.json()}).then(function(data) {
+    var servers = data.servers || [];
+    var players = 0, admins = 0;
+    servers.forEach(function(s) {
+      var p = (s.live_data && s.live_data.players) || [];
+      players += p.length;
+      admins += p.filter(function(x){return x.is_admin}).length;
+    });
+    document.getElementById("statPlayers").textContent = players;
+    document.getElementById("statAdmins").textContent = admins;
+  }).catch(function(){});
+  fetch("/api/punishments/staff/stats").then(function(r){return r.json()}).then(function(data) {
+    var total = 0;
+    Object.values(data).forEach(function(s){ total += (s.bans||0) + (s.mutes||0); });
+    document.getElementById("statReports").textContent = total;
+  }).catch(function(){});
+}
 
 var refreshBtn = document.getElementById("refreshBtn");
 var statusEl = document.getElementById("status");
@@ -647,3 +689,5 @@ if (logoutBtn) {
 
 setInterval(loadOnlineAdmins, 15000);
 loadOnlineAdmins();
+loadDashboardStats();
+setInterval(loadDashboardStats, 30000);

@@ -24,7 +24,10 @@ const {
   getStaffStatsForPeriod,
   findAdminByDiscordId,
   getSiteRoleRank,
-  MIN_SITE_ROLE_RANK
+  MIN_SITE_ROLE_RANK,
+  getHiddenStaff,
+  addHiddenStaff,
+  removeHiddenStaff
 } = require("./db");
 const { FearAuthError, fetchAdmins, fetchProfile, fetchJson } = require("./fearApi");
 const logger = require("./logger");
@@ -65,7 +68,7 @@ const DISCORD_ROLE_LABELS = {
 };
 const MIN_DISCORD_ROLE_RANK = 7;
 
-async function fetchDiscordMemberRoles(discordUserId) {
+async function fetchDiscordMember(discordUserId) {
   if (!DISCORD_BOT_TOKEN) throw new Error("DISCORD_BOT_TOKEN not configured");
   const url = `https://discord.com/api/v10/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}`;
   const resp = await fetch(url, {
@@ -76,8 +79,12 @@ async function fetchDiscordMemberRoles(discordUserId) {
     const body = await resp.text();
     throw new Error(`Discord API ${resp.status}: ${body}`);
   }
-  const member = await resp.json();
-  return member.roles || [];
+  return await resp.json();
+}
+
+async function fetchDiscordMemberRoles(discordUserId) {
+  const member = await fetchDiscordMember(discordUserId);
+  return member ? member.roles || [] : null;
 }
 
 function resolveDiscordRole(roles) {
@@ -238,7 +245,19 @@ app.post("/api/auth/logout", async (req, res) => {
 
 app.get("/api/auth/me", async (req, res) => {
   if (!req.user) return res.status(401).json({ error: "Not authenticated" });
-  res.json({ user: { id: req.user.user_id, username: req.user.username, role: req.user.role, discord_name: req.user.discord_name } });
+  var user = { id: req.user.user_id, username: req.user.username, role: req.user.role, discord_name: req.user.discord_name, discord_id: req.user.discord_id };
+  if (req.user.discord_id) {
+    try {
+      var member = await fetchDiscordMember(req.user.discord_id);
+      if (member && member.user) {
+        user.discord_avatar = member.user.avatar ? "https://cdn.discordapp.com/guilds/" + DISCORD_GUILD_ID + "/users/" + req.user.discord_id + "/avatars/" + member.user.avatar + ".png?size=64" : null;
+        user.discord_display = member.nick || member.user.global_name || member.user.username;
+        var resolved = resolveDiscordRole(member.roles || []);
+        user.discord_role = resolved ? (DISCORD_ROLE_LABELS[resolved.roleId] || "Стафф") : null;
+      }
+    } catch (_) {}
+  }
+  res.json({ user });
 });
 
 app.get("/api/staff-stats", async (req, res) => {
@@ -524,6 +543,42 @@ app.post("/api/punishments-sync", async (_req, res) => {
     logger.error("Background punishments sync crashed", { error: error.message });
   });
   res.status(202).json({ ok: true, message: "Punishments sync started" });
+});
+
+function requireOwner(req, res, next) {
+  if (!req.user || req.user.role !== "Владелец") {
+    return res.status(403).json({ error: "Только владелец" });
+  }
+  next();
+}
+
+app.get("/api/hidden-staff", requireOwner, async (_req, res) => {
+  try {
+    const list = await getHiddenStaff();
+    res.json({ hidden: list });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/hidden-staff", requireOwner, async (req, res) => {
+  try {
+    const { steamid } = req.body;
+    if (!steamid) return res.status(400).json({ error: "steamid required" });
+    await addHiddenStaff(String(steamid), req.user.username);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/hidden-staff/:steamid", requireOwner, async (req, res) => {
+  try {
+    await removeHiddenStaff(req.params.steamid);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/api/punishments/staff/stats", async (_req, res) => {
