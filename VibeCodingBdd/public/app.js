@@ -299,11 +299,12 @@ async function loadPage(reset) {
   }
 }
 
+var scrollPanel = document.querySelector("#tab-all .scroll-panel");
 var observer = new IntersectionObserver(function(entries) {
   entries.forEach(function(entry) {
     if (entry.isIntersecting && !loading) loadPage(false);
   });
-}, { rootMargin: "200px" });
+}, { root: scrollPanel, rootMargin: "200px" });
 
 if (searchInput) {
   searchInput.addEventListener("input", function() {
