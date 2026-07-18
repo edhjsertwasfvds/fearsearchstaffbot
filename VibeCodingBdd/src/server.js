@@ -839,6 +839,55 @@ function startAutoRefresh() {
   });
 }
 
+// ===================== OWNER SETTINGS =====================
+let techMode = false;
+
+app.get("/api/owner/settings", requireOwner, (req, res) => {
+  res.json({
+    techMode,
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage(),
+    nodeVersion: process.version,
+    platform: process.platform
+  });
+});
+
+app.post("/api/owner/tech-mode", requireOwner, (req, res) => {
+  techMode = !techMode;
+  logger.info("Tech mode toggled", { techMode });
+  res.json({ techMode });
+});
+
+app.post("/api/owner/force-refresh", requireOwner, async (req, res) => {
+  try {
+    await refreshAllData();
+    res.json({ ok: true, message: "Данные обновлены" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/owner/system", requireOwner, async (req, res) => {
+  try {
+    const adminCount = (await pool.query("SELECT COUNT(*) FROM admins")).rows[0].count;
+    const profilesCount = (await pool.query("SELECT COUNT(*) FROM profiles")).rows[0].count;
+    const punishmentsCount = (await pool.query("SELECT COUNT(*) FROM punishments")).rows[0].count;
+    const usersCount = (await pool.query("SELECT COUNT(*) FROM site_users")).rows[0].count;
+    res.json({
+      adminCount: Number(adminCount),
+      profilesCount: Number(profilesCount),
+      punishmentsCount: Number(punishmentsCount),
+      usersCount: Number(usersCount),
+      uptime: Math.floor(process.uptime()),
+      memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      techMode
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+}
+
 initDb()
   .then(() => {
     logger.info("DB initialized");

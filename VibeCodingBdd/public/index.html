@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fear Staff Sync</title>
-    <link rel="icon" type="image/webp" href="/favicon.webp">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdn.tailwindcss.com/3.4.17"></script>
     <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -296,6 +296,21 @@
             <!-- Tab: Admin Panel -->
             <div id="tab-adminpanel" class="tab-content">
                 <div class="scroll-panel p-4">
+                    <!-- Owner Settings -->
+                    <div class="glass-panel rounded-2xl p-5 mb-4">
+                        <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2"><i class="ph ph-gear-six text-[#5865F2]"></i> Настройки владельца</h3>
+                        <div id="ownerSystemInfo" class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4"></div>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="ownerForceRefresh()" class="px-4 py-2 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-xs font-semibold transition-colors flex items-center gap-1.5">
+                                <i class="ph ph-arrows-clockwise"></i> Принудительное обновление
+                            </button>
+                            <button onclick="ownerToggleTechMode()" id="techModeBtn" class="px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-semibold transition-colors flex items-center gap-1.5">
+                                <i class="ph ph-wrench"></i> Тех. работы: Выкл
+                            </button>
+                        </div>
+                        <div id="ownerActionResult" class="mt-3 text-xs hidden"></div>
+                    </div>
+
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <div class="glass-panel rounded-xl p-4">
                             <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2"><i class="ph ph-users text-[#5865F2]"></i> Пользователи сайта</h3>

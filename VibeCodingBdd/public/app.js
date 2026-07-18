@@ -169,7 +169,8 @@ function renderOnlineCard(p) {
   var html = '<div class="admin-card online rounded-xl bg-white/[0.03] p-3 flex flex-col gap-2 fade-in">';
   html += '<div class="flex items-start gap-2.5">';
   html += '<div class="relative shrink-0">';
-  html += '<img src="' + esc(avatar) + '" alt="" class="w-10 h-10 rounded-lg object-cover">';
+  html += '<img src="' + esc(avatar) + '" alt="" class="w-10 h-10 rounded-lg object-cover" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">';
+  html += '<div class="w-10 h-10 rounded-lg bg-white/10 items-center justify-center hidden"><i class="ph ph-user text-gray-500"></i></div>';
   html += '<div class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-[#0a0a0c]"></div>';
   html += '</div>';
   html += '<div class="flex-1 min-w-0">';
@@ -273,7 +274,7 @@ function renderRow(row) {
   var tr = document.createElement("tr");
   tr.className = "border-t border-white/5 hover:bg-white/[0.04] transition-colors";
   tr.innerHTML =
-    '<td class="px-3 py-3"><img src="' + esc(row.avatar_full || "") + '" alt="" class="w-8 h-8 rounded-full"></td>'
+    '<td class="px-3 py-3"><img src="' + esc(row.avatar_full || "") + '" alt="" class="w-8 h-8 rounded-full" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'"><div class="w-8 h-8 rounded-full bg-white/10 items-center justify-center hidden"><i class="ph ph-user text-gray-500 text-xs"></i></div></td>'
     + '<td class="px-3 py-3 text-white font-medium">' + esc(row.name || "-") + "</td>"
     + '<td class="px-3 py-3 font-mono text-gray-400 text-xs">' + steamid + "</td>"
     + '<td class="px-3 py-3 text-gray-300">' + esc(row.group_display_name || row.group_name || "-") + "</td>"
@@ -297,7 +298,7 @@ function clearRows() {
   s.id = "scrollSentinel";
   s.innerHTML = '<td colspan="13" class="px-4 py-4 text-center"><div class="flex items-center justify-center gap-2 text-gray-600 text-sm"><div class="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin"></div></div></td>';
   rowsEl.appendChild(s);
-  observer.observe(s);
+  if (observer) observer.observe(s);
 }
 
 async function loadPage(reset) {
@@ -334,9 +335,11 @@ async function loadPage(reset) {
 }
 
 var scrollPanel = document.querySelector("#tab-all .scroll-panel");
-var observer = new IntersectionObserver(function(entries) {
+var observer = scrollPanel ? new IntersectionObserver(function(entries) {
   entries.forEach(function(entry) {
     if (entry.isIntersecting && !loading) loadPage(false);
+  });
+}, { root: scrollPanel, rootMargin: "200px" }) : null;
   });
 }, { root: scrollPanel, rootMargin: "200px" });
 
@@ -671,6 +674,7 @@ document.querySelectorAll(".sidebar-nav-btn").forEach(function(btn) {
     }
     if (btn.dataset.tab === "adminpanel") {
       loadAdminPanel();
+      loadOwnerSystem();
     }
   });
 });
@@ -836,4 +840,48 @@ function loadAdminPanel() {
     });
     logsEl.innerHTML = html;
   }).catch(function() { if (logsEl) logsEl.innerHTML = '<div class="text-red-400 text-xs">Ошибка</div>'; });
+}
+
+// ===================== OWNER SETTINGS =====================
+function loadOwnerSystem() {
+  var el = document.getElementById("ownerSystemInfo");
+  if (!el) return;
+  fetch("/api/owner/system").then(function(r){return r.json()}).then(function(d) {
+    el.innerHTML = ''
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.adminCount + '</div><div class="text-[10px] text-gray-500">Админов</div></div>'
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.profilesCount + '</div><div class="text-[10px] text-gray-500">Профилей</div></div>'
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.punishmentsCount + '</div><div class="text-[10px] text-gray-500">Наказаний</div></div>'
+      + '<div class="text-center p-3 rounded-xl bg-white/[0.03] border border-white/5"><div class="text-lg font-bold text-white">' + d.memoryMB + 'MB</div><div class="text-[10px] text-gray-500">Память</div></div>';
+    var btn = document.getElementById("techModeBtn");
+    if (btn) {
+      btn.innerHTML = d.techMode
+        ? '<i class="ph ph-wrench"></i> Тех. работы: Вкл'
+        : '<i class="ph ph-wrench"></i> Тех. работы: Выкл';
+      if (d.techMode) { btn.classList.remove("bg-amber-500/15","border-amber-500/30","text-amber-400"); btn.classList.add("bg-emerald-500/15","border-emerald-500/30","text-emerald-400"); }
+      else { btn.classList.remove("bg-emerald-500/15","border-emerald-500/30","text-emerald-400"); btn.classList.add("bg-amber-500/15","border-amber-500/30","text-amber-400"); }
+    }
+  }).catch(function(){});
+}
+
+function ownerShowResult(msg, ok) {
+  var el = document.getElementById("ownerActionResult");
+  if (!el) return;
+  el.className = 'mt-3 text-xs px-3 py-2 rounded-lg ' + (ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  setTimeout(function() { el.classList.add('hidden'); }, 3000);
+}
+
+function ownerForceRefresh() {
+  fetch("/api/owner/force-refresh", { method: "POST" }).then(function(r){return r.json()}).then(function(d) {
+    if (d.ok) { ownerShowResult("Данные успешно обновлены!", true); loadOnlineAdmins(); loadDashboardStats(); }
+    else ownerShowResult("Ошибка: " + (d.error || "unknown"), false);
+  }).catch(function(e) { ownerShowResult("Ошибка: " + e.message, false); });
+}
+
+function ownerToggleTechMode() {
+  fetch("/api/owner/tech-mode", { method: "POST" }).then(function(r){return r.json()}).then(function(d) {
+    ownerShowResult("Тех. режим: " + (d.techMode ? "ВКЛ" : "ВЫКЛ"), true);
+    loadOwnerSystem();
+  }).catch(function(e) { ownerShowResult("Ошибка: " + e.message, false); });
 }
