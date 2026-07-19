@@ -164,12 +164,6 @@
                     </div>
                     <span>Аналитика</span>
                 </button>
-                <button class="sidebar-nav-btn flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-400" data-tab="accounts">
-                    <div class="nav-icon w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0 transition-colors">
-                        <i class="ph ph-user-list text-sm"></i>
-                    </div>
-                    <span>Все аккаунты</span>
-                </button>
             </nav>
 
             <!-- External links -->
@@ -335,6 +329,12 @@
             <!-- Tab: Admin Panel -->
             <div id="tab-adminpanel" class="tab-content">
                 <div class="scroll-panel p-4">
+                    <!-- Staff Overview -->
+                    <div class="glass-panel rounded-2xl p-5 mb-4">
+                        <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2"><i class="ph ph-chart-line-up text-emerald-400"></i> Обзор стаффа</h3>
+                        <div id="staffOverviewCards" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+                    </div>
+
                     <!-- Owner Settings -->
                     <div class="glass-panel rounded-2xl p-5 mb-4">
                         <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2"><i class="ph ph-gear-six text-[#5865F2]"></i> Настройки владельца</h3>
@@ -399,38 +399,6 @@
                 </div>
             </div>
 
-            <!-- Tab: All Accounts -->
-            <div id="tab-accounts" class="tab-content">
-                <div class="glass-panel rounded-xl p-3 mb-3 shrink-0">
-                    <div class="flex items-center gap-3">
-                        <i class="ph ph-magnifying-glass text-gray-500"></i>
-                        <input type="text" id="accountsSearch" placeholder="Поиск по имени, SteamID..."
-                            class="bg-transparent border-none outline-none text-white text-sm w-full placeholder-gray-500">
-                        <span id="accountsCount" class="text-sm text-gray-500 whitespace-nowrap"></span>
-                    </div>
-                </div>
-                <div class="scroll-panel rounded-xl border border-white/10 bg-white/[0.03]">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-white/5 text-gray-400 sticky top-0 z-10">
-                            <tr>
-                                <th class="px-3 py-3"></th>
-                                <th class="px-3 py-3 font-semibold">Имя</th>
-                                <th class="px-3 py-3 font-semibold">SteamID</th>
-                                <th class="px-3 py-3 font-semibold">Группа</th>
-                                <th class="px-3 py-3 font-semibold">K/D</th>
-                                <th class="px-3 py-3 font-semibold">Часы</th>
-                                <th class="px-3 py-3 font-semibold">Faceit</th>
-                                <th class="px-3 py-3 font-semibold">Регистрация</th>
-                                <th class="px-3 py-3 font-semibold">Последняя активность</th>
-                                <th class="px-3 py-3 font-semibold">Ссылки</th>
-                            </tr>
-                        </thead>
-                        <tbody id="accountsRows"></tbody>
-                    </table>
-                </div>
-                <div class="mt-2 text-center shrink-0">
-                    <span id="accountsPaging" class="text-xs text-gray-500"></span>
-                </div>
             </div>
         </main>
 

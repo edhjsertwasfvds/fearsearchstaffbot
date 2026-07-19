@@ -388,7 +388,7 @@ app.get("/api/staff-stats", async (req, res) => {
       "Модератор Discord": 11, "Модератор месяца": 11,
     };
     const EXCLUDED_ROLE_KEYS = new Set(["admin", "admin+", "ADMIN", "ADMIN+", "UNDEFINED", "Медиа", "MEDIA", "МЕДИА"]);
-    const EXCLUDED_STEAMIDS = new Set(["76561198007541774", "76561199077499521", "76561198388989868", "76561198283135025", "76561199077199811", "76561199097711339"]);
+    const EXCLUDED_STEAMIDS = new Set(["76561198007541774", "76561199077499521", "76561198388989868", "76561198283135025", "76561199077199811", "76561199097711339", "76561198121797965"]);
 
     const staffMap = {};
     for (const row of stats) {
@@ -983,16 +983,11 @@ app.get("/api/servers", async (_req, res) => {
       });
     });
     const uniqueSteamids = [...new Set(adminSteamids)];
-    const [profilesMap, hiddenStaff, allProfiles] = await Promise.all([
+    const [profilesMap, hiddenStaff] = await Promise.all([
       getProfilesBySteamids(uniqueSteamids),
-      getHiddenStaff(),
-      require("./db").pool.query(
-        `SELECT steamid, kills, deaths FROM profiles WHERE kills IS NOT NULL AND kills > 0 ORDER BY kills DESC`
-      )
+      getHiddenStaff()
     ]);
     const hiddenSet = new Set(hiddenStaff.map(h => h.steamid));
-    const leaderboard = {};
-    allProfiles.rows.forEach((p, i) => { leaderboard[p.steamid] = i + 1; });
     servers.forEach(s => {
       (s.live_data?.players || []).forEach(p => {
         const prof = profilesMap[p.steam_id];
@@ -1009,12 +1004,10 @@ app.get("/api/servers", async (_req, res) => {
           p.db_group_name = prof.group_name;
           p.db_group_display_name = prof.group_display_name;
           p.db_hidden = hiddenSet.has(p.steam_id);
-          p.db_leaderboard_pos = leaderboard[p.steam_id] || null;
-          p.db_leaderboard_total = allProfiles.rows.length;
         }
       });
     });
-    res.json({ servers, hiddenStaff: [...hiddenSet] });
+    res.json({ servers });
   } catch (error) {
     logger.error("Failed to fetch servers", { error: error.message });
     res.status(500).json({ error: "Internal server error" });
@@ -1068,7 +1061,7 @@ function startOnlinePoller() {
   setInterval(async () => {
     try {
       const { fetchJson } = require("./fearApi");
-      const servers = await fetchJson("https://api.fearproject.ru/api/servers");
+      const servers = await fetchJson("/servers/");
       if (!Array.isArray(servers)) return;
       let playersOnline = 0;
       let adminsOnline = 0;
@@ -1118,6 +1111,56 @@ app.post("/api/owner/force-refresh", requireOwner, async (req, res) => {
   if (refreshInProgress) return res.status(409).json({ error: "Refresh already running" });
   res.json({ ok: true, message: "Обновление запущено" });
   refreshAllData().catch(error => logger.error("Force refresh failed", { error: error.message }));
+});
+
+const EXCLUDED_STEAMIDS_SET = new Set(["76561198007541774", "76561199077499521", "76561198388989868", "76561198283135025", "76561199077199811", "76561199097711339", "76561198121797965"]);
+const STAFF_EXCLUDED_GROUPS = new Set(["admin", "admin+", "ADMIN", "ADMIN+", "UNDEFINED", "Медиа", "MEDIA", "МЕДИА"]);
+
+app.get("/api/staff-overview", requireOwner, async (_req, res) => {
+  try {
+    const dbPool = require("./db").pool;
+    const excludedArr = [...EXCLUDED_STEAMIDS_SET];
+    const r = await dbPool.query(`
+      SELECT
+        p.steamid,
+        COALESCE(p.name, a.raw_json->>'name') AS name,
+        p.kills, p.deaths, p.playtime, p.rank,
+        p.avatar_full,
+        (p.raw_json->>'created_at') AS fear_created_at,
+        a.group_name, a.group_display_name
+      FROM profiles p
+      LEFT JOIN admins a ON a.steamid = p.steamid
+      WHERE a.steamid IS NOT NULL
+        AND a.steamid != ALL($1)
+        AND LOWER(COALESCE(a.group_name, '')) NOT LIKE 'admin%'
+        AND LOWER(COALESCE(a.group_name, '')) NOT LIKE '%media%'
+    `, [excludedArr]);
+    const staff = r.rows;
+    const byKd = staff.filter(s => s.kills > 0 && s.deaths > 0)
+      .map(s => ({ ...s, kd: (s.kills / s.deaths).toFixed(2), kdNum: s.kills / s.deaths }))
+      .sort((a, b) => b.kdNum - a.kdNum)
+      .slice(0, 5);
+    const byNewest = staff.filter(s => s.fear_created_at)
+      .map(s => ({ ...s, createdMs: new Date(s.fear_created_at).getTime() }))
+      .sort((a, b) => b.createdMs - a.createdMs)
+      .slice(0, 5);
+    const byLowHours = staff.filter(s => s.playtime != null && s.playtime > 0)
+      .sort((a, b) => a.playtime - b.playtime)
+      .slice(0, 5);
+    const totalStaff = staff.length;
+    const avgKd = staff.filter(s => s.kills > 0 && s.deaths > 0)
+      .reduce((acc, s) => { acc.sum += s.kills / s.deaths; acc.cnt++; return acc; }, { sum: 0, cnt: 0 });
+    const avgPlaytime = staff.filter(s => s.playtime != null && s.playtime > 0)
+      .reduce((acc, s) => { acc.sum += s.playtime; acc.cnt++; return acc; }, { sum: 0, cnt: 0 });
+    res.json({
+      totalStaff,
+      avgKd: avgKd.cnt > 0 ? (avgKd.sum / avgKd.cnt).toFixed(2) : "-",
+      avgPlaytime: avgPlaytime.cnt > 0 ? Math.round(avgPlaytime.sum / avgPlaytime.cnt / 3600) : 0,
+      topKd: byKd,
+      newestAccounts: byNewest,
+      lowestHours: byLowHours
+    });
+  } catch (error) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 app.get("/api/tab-access", async (req, res) => {
